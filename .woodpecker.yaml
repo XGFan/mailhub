@@ -6,14 +6,8 @@ when:
   event: [push, manual]
 
 steps:
-  - name: test
-    image: node:22-alpine
-    commands:
-      - corepack enable
-      - pnpm install --frozen-lockfile
-      - pnpm -r typecheck
-      - pnpm -r test
-
+  # 注：不在 CI 跑 pnpm install/test —— 集群到 registry.npmjs.org 出网极慢(~1-3 KiB/s，会 fetch failed)。
+  # 单元/集成/E2E 测试在本地跑(pnpm -r test + e2e/)，CI 以 build(镜像可编译) 作为门禁。
   - name: build
     image: docker.test4x.com/xgfan/plugin-docker-buildx-check
     settings:
