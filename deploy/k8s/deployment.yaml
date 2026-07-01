@@ -1,0 +1,76 @@
+# Singleton portal Deployment: REST API + ingestor + auto-purge in one
+# process (plan §5.6). replicas: 1 and strategy: Recreate are both load-
+# bearing — the ingestor is a singleton and the PVC is RWO, so a rolling
+# update that tries to run two pods at once would either double-ingest or
+# get stuck waiting on the volume attach (H5).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailhub-portal
+  namespace: mailhub
+  labels:
+    app: mailhub-portal
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: mailhub-portal
+  template:
+    metadata:
+      labels:
+        app: mailhub-portal
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: portal
+          # Build with the repo-root Dockerfile and push to your registry;
+          # replace this with that image reference.
+          image: mailhub-portal:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8787
+          envFrom:
+            - secretRef:
+                name: mailhub-secrets
+          volumeMounts:
+            - name: attachments
+              mountPath: /data/attachments
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: attachments
+          persistentVolumeClaim:
+            claimName: mailhub-attachments

@@ -1,0 +1,52 @@
+# Local integration stack for the MailHub portal backend: Postgres (mail store)
+# + MinIO (R2 stand-in over the S3 API).
+#
+#   docker compose -f portal/server/docker-compose.yml up -d
+#
+# Then, for portal/server/.env (copy from the repo-root .env.example):
+#   DATABASE_URL=postgres://mailhub:mailhub@localhost:5432/mailhub
+#   R2_ENDPOINT=http://localhost:9000
+#   R2_ACCESS_KEY_ID=mailhub
+#   R2_SECRET_ACCESS_KEY=mailhub-secret
+#   R2_BUCKET=mailhub-raw
+#
+# Create the bucket once MinIO is up (via the console at http://localhost:9001
+# or the mc CLI). For the guarded idempotency integration test:
+#   TEST_DATABASE_URL=postgres://mailhub:mailhub@localhost:5432/mailhub pnpm test
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mailhub
+      POSTGRES_PASSWORD: mailhub
+      POSTGRES_DB: mailhub
+    ports:
+      - '5432:5432'
+    volumes:
+      - mailhub_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U mailhub']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: mailhub
+      MINIO_ROOT_PASSWORD: mailhub-secret
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - mailhub_minio:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mailhub_pg:
+  mailhub_minio:

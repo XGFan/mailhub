@@ -1,0 +1,19 @@
+# RWO PVC for attachment bytes + archived raw .eml (plan §5.4). Recreate
+# deploy strategy (deployment.yaml) exists specifically because this is RWO —
+# a rolling update would try to mount it from two pods at once and stick (H5).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mailhub-attachments
+  namespace: mailhub
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # Attachments only (raw .eml is transient — deleted after ingest, see
+      # plan §5.2). Resize as needed; adjust for your retention/volume.
+      storage: 10Gi
+  # storageClassName left unset (cluster default). Pin to your cluster's RWO
+  # class explicitly if it has more than one default candidate, e.g.:
+  # storageClassName: standard

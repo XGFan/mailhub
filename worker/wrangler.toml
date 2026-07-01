@@ -1,0 +1,15 @@
+name = "mailhub-worker"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Inbound mail is delivered by Cloudflare Email Routing to this Worker's
+# email() handler. Configure the route (a specific address or catch-all) to
+# target this Worker in the Cloudflare dashboard: Email Routing → Email Workers.
+# No public HTTP route is required for the ingestor.
+
+# R2 bucket that buffers raw MIME. The bucket (`mailhub-raw`) must exist
+# before this Worker can bind to it as `env.RAW_MAIL`.
+[[r2_buckets]]
+binding = "RAW_MAIL"
+bucket_name = "mailhub-raw"

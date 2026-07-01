@@ -1,0 +1,35 @@
+packages:
+  - shared
+  - worker
+  - portal/server
+  - portal/web
+allowBuilds:
+  # esbuild's postinstall only validates the binary and is unreliable when
+  # several esbuild versions coexist; the working native binary is delivered by
+  # its optional @esbuild/<platform> package, so the build script is not needed.
+  esbuild: false
+  sharp: false
+  # workerd downloads the runtime binary used by `wrangler dev` in worker/.
+  workerd: true
+minimumReleaseAgeExclude:
+  - '@aws-sdk/checksums@3.1000.10'
+  - '@aws-sdk/client-s3@3.1077.0'
+  - '@aws-sdk/core@3.974.25'
+  - '@aws-sdk/credential-provider-env@3.972.51'
+  - '@aws-sdk/credential-provider-http@3.972.53'
+  - '@aws-sdk/credential-provider-ini@3.972.58'
+  - '@aws-sdk/credential-provider-login@3.972.57'
+  - '@aws-sdk/credential-provider-node@3.972.60'
+  - '@aws-sdk/credential-provider-process@3.972.51'
+  - '@aws-sdk/credential-provider-sso@3.972.57'
+  - '@aws-sdk/credential-provider-web-identity@3.972.57'
+  - '@aws-sdk/middleware-sdk-s3@3.972.56'
+  - '@aws-sdk/nested-clients@3.997.25'
+  - '@aws-sdk/signature-v4-multi-region@3.996.37'
+  - '@aws-sdk/token-providers@3.1077.0'
+  - '@cloudflare/workers-types@4.20260701.1'
+  - '@types/node@26.1.0'
+  - lucide-react@1.23.0
+  - miniflare@4.20260630.0
+  - vite@8.1.2
+  - wrangler@4.106.0

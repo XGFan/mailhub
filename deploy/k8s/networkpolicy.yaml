@@ -1,0 +1,35 @@
+# Default-deny ingress to the portal pod except from an explicitly allowed
+# source (plan §3 invariant 1 / AC10). This narrows the blast radius of the
+# no-app-auth decision to "whatever you've labeled as allowed" rather than
+# "the whole cluster network".
+#
+# NOTE: this does NOT affect `kubectl port-forward` — that traffic is proxied
+# pod<-kubelet<-apiserver and never traverses the CNI-enforced pod network
+# that NetworkPolicy governs, so port-forward keeps working even with a
+# default-deny policy in place.
+#
+# Adjust the `from` selector to match how you actually reach the portal, e.g.
+# a Tailscale operator namespace, an internal jump-box namespace, or a
+# Cloudflare Access tunnel connector's pod label. As shipped, nothing carries
+# these labels, so ingress is denied by default until you label a real source.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mailhub-portal-default-deny
+  namespace: mailhub
+spec:
+  podSelector:
+    matchLabels:
+      app: mailhub-portal
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              # Placeholder: label your access-path namespace with this, e.g.
+              #   kubectl label namespace <ns> mailhub-access=allowed
+              mailhub-access: "allowed"
+      ports:
+        - protocol: TCP
+          port: 8787

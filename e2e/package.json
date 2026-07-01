@@ -1,0 +1,21 @@
+{
+  "name": "mailhub-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Full-stack browser E2E for the MailHub portal (standalone, NOT a pnpm-workspace member).",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "report": "playwright show-report",
+    "stack:up": "docker compose -p mailhub-e2e up -d",
+    "stack:down": "docker compose -p mailhub-e2e down -v"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-s3": "^3.700.0",
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.20.0",
+    "pg": "^8.13.0"
+  }
+}

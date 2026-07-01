@@ -1,0 +1,61 @@
+# MailHub CI —— 与 temp-mail-hub 同款：test → build(push registry) → deploy(kubectl set image) → bark 通知。
+# 需要的 Woodpecker secrets：docker_username / docker_password（registry）、kubeconfig（set image）、bark_token（通知）。
+# 镜像 docker.test4x.com/xgfan/mailhub:{<sha8>,latest}；live 跑具体 SHA（k8s 清单里 :latest 仅模板）。
+when:
+  branch: master
+  event: [push, manual]
+
+steps:
+  - name: test
+    image: node:22-alpine
+    commands:
+      - corepack enable
+      - pnpm install --frozen-lockfile
+      - pnpm -r typecheck
+      - pnpm -r test
+
+  - name: build
+    image: docker.test4x.com/xgfan/plugin-docker-buildx-check
+    settings:
+      repo: docker.test4x.com/xgfan/mailhub
+      registry: docker.test4x.com
+      mirror: https://docker.test4x.com
+      tags:
+        - "${CI_COMMIT_SHA:0:8}"
+        - latest
+      mtu: 1450
+      cache_from: docker.test4x.com/xgfan/mailhub:cache
+      cache_to: docker.test4x.com/xgfan/mailhub:cache
+      username:
+        from_secret: docker_username
+      password:
+        from_secret: docker_password
+
+  - name: deploy
+    image: bitnami/kubectl:latest
+    commands:
+      - echo "$KUBECONFIG_DATA" > /tmp/kubeconfig
+      - export KUBECONFIG=/tmp/kubeconfig
+      - kubectl set image deployment/mailhub mailhub=docker.test4x.com/xgfan/mailhub:$(echo $CI_COMMIT_SHA | cut -c1-8) -n default
+      - rm -f /tmp/kubeconfig
+    environment:
+      KUBECONFIG_DATA:
+        from_secret: kubeconfig
+
+  - name: notify-success
+    image: docker.test4x.com/xgfan/plugin-bark
+    failure: ignore
+    settings:
+      token:
+        from_secret: bark_token
+      status: success
+
+  - name: notify-failure
+    image: docker.test4x.com/xgfan/plugin-bark
+    failure: ignore
+    settings:
+      token:
+        from_secret: bark_token
+      status: failure
+    when:
+      - status: [failure]

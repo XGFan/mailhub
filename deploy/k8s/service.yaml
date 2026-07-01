@@ -1,0 +1,19 @@
+# ClusterIP only — never LoadBalancer. With no app auth (plan §3 invariant 1),
+# this Service is the entire containment boundary alongside networkpolicy.yaml.
+# Reach it via `kubectl port-forward svc/mailhub-portal 8787:8787 -n mailhub`,
+# a VPN/Tailscale, or an optional Cloudflare Access tunnel.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailhub-portal
+  namespace: mailhub
+  labels:
+    app: mailhub-portal
+spec:
+  type: ClusterIP
+  selector:
+    app: mailhub-portal
+  ports:
+    - name: http
+      port: 8787
+      targetPort: http

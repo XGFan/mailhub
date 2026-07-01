@@ -1,0 +1,27 @@
+# dependencies
+node_modules
+
+# build output
+dist
+build
+*.tsbuildinfo
+
+# cloudflare / wrangler
+.dev.vars
+.wrangler
+
+# local data (attachments, sqlite, etc.)
+/data
+
+# env & secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# logs & coverage
+*.log
+coverage
+
+# os / editor
+.DS_Store

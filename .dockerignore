@@ -1,0 +1,32 @@
+# Dependencies are (re)installed inside the image by the builder stage — host
+# node_modules would be the wrong platform/arch and can confuse pnpm's linked
+# store.
+node_modules
+**/node_modules
+
+# VCS / OMC / editor state — irrelevant to the runtime image.
+.git
+.omc
+.claude
+
+# Build output — regenerated fresh by the builder stage (portal/web/dist in
+# particular must come from `pnpm --filter @mailhub/web build` inside the
+# image, not a stale host build).
+dist
+**/dist
+*.tsbuildinfo
+
+# Local data / attachments / cloudflare dev state.
+data
+**/data
+.wrangler
+**/.wrangler
+
+# Secrets / logs / coverage.
+.env
+.env.*
+!.env.example
+*.log
+coverage
+**/coverage
+.DS_Store

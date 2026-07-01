@@ -1,0 +1,13 @@
+# Optional convenience for `kubectl apply -k deploy/k8s`. secret.example.yaml
+# is deliberately NOT listed here — it's a template with placeholder values;
+# create the real Secret out-of-band (see its header comment) before applying
+# this kustomization.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: mailhub
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy.yaml

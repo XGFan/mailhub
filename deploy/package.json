@@ -1,0 +1,11 @@
+{
+  "name": "@mailhub/deploy",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Deploy-time checks (deploy-lint, AC10). Not a pnpm workspace package — plain Node, no dependencies.",
+  "scripts": {
+    "lint": "node lint.mjs",
+    "test": "node lint.test.mjs"
+  }
+}
