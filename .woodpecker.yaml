@@ -26,8 +26,13 @@ steps:
         from_secret: docker_password
 
   - name: deploy
-    image: bitnami/kubectl:latest
+    # 不用 bitnami/kubectl:latest（Bitnami 2025 下架 Docker Hub 免费镜像，:latest 拉取失败）。
+    # 改用 infra 漂移 CI 的既有做法：alpine + curl kubectl（集群到 dl.k8s.io 出网正常）。
+    image: alpine:3.20
     commands:
+      - apk add --no-cache curl >/dev/null
+      - curl -sSLf -o /usr/local/bin/kubectl https://dl.k8s.io/release/v1.34.6/bin/linux/amd64/kubectl
+      - chmod +x /usr/local/bin/kubectl
       - echo "$KUBECONFIG_DATA" > /tmp/kubeconfig
       - export KUBECONFIG=/tmp/kubeconfig
       - kubectl set image deployment/mailhub mailhub=docker.test4x.com/xgfan/mailhub:$(echo $CI_COMMIT_SHA | cut -c1-8) -n default
