@@ -34,7 +34,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { MailListRow } from '@/components/mail-list-item';
 import { EmptyInboxState, ErrorState, ListSkeleton, NoResultsState } from '@/components/states';
 import { cn } from '@/lib/utils';
@@ -199,35 +198,14 @@ export function MailList(props: Props) {
 
   const selectedItems = items.filter((i) => selectedIds.has(i.id));
   const allChecked = items.length > 0 && items.every((i) => selectedIds.has(i.id));
-  const filterActive = favoriteOnly || includeSpam;
-  const countLabel =
-    isLoading && items.length === 0
-      ? 'Loading…'
-      : hasQuery
-        ? `${total} result${total === 1 ? '' : 's'}`
-        : `${total} message${total === 1 ? '' : 's'}`;
+  const filterActive = favoriteOnly || includeSpam || field !== 'all';
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Search + toolbar (Outlook-style, above the list) */}
-      <div className="space-y-2 border-b px-3 py-2.5">
-        <div className="relative">
-          <Search
-            aria-hidden
-            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            type="search"
-            value={rawQuery}
-            onChange={(e) => onQueryChange(e.target.value)}
-            placeholder="Search mail…"
-            aria-label="Search mail"
-            className="pl-9"
-          />
-        </div>
-
+      {/* Search + toolbar (Outlook-style, single row above the list) */}
+      <div className="flex items-center gap-1 border-b px-3 py-2.5">
         {selectionMode ? (
-          <div className="flex items-center gap-1">
+          <>
             <input
               type="checkbox"
               checked={allChecked}
@@ -280,113 +258,98 @@ export function MailList(props: Props) {
                 <X className="size-4" />
               </Button>
             </div>
-          </div>
+          </>
         ) : (
-          <div className="flex items-center gap-1">
-            <ToggleGroup
-              type="single"
-              value={field}
-              onValueChange={(value) => value && onFieldChange(value as SearchField)}
-              variant="outline"
-              size="sm"
-              aria-label="Search field"
-              className="shrink-0"
-            >
-              {FIELDS.map((f) => (
-                <ToggleGroupItem
-                  key={f.value}
-                  value={f.value}
-                  aria-label={`Search ${f.label}`}
-                  className="px-2 text-xs"
-                >
-                  {f.label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
+          <>
+            <div className="relative flex-1">
+              <Search
+                aria-hidden
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                type="search"
+                value={rawQuery}
+                onChange={(e) => onQueryChange(e.target.value)}
+                placeholder="Search mail…"
+                aria-label="Search mail"
+                className="pl-9"
+              />
+            </div>
 
-            <div className="ml-auto flex items-center gap-0.5">
-              {/* Filter */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Filter"
-                    title="Filter"
-                    className={cn(filterActive && 'text-primary')}
-                  >
-                    <ListFilter className="size-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44">
-                  <DropdownMenuLabel>Show</DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    value={favoriteOnly ? 'favorites' : 'all'}
-                    onValueChange={(v) => onFavoriteOnlyChange(v === 'favorites')}
-                  >
-                    <DropdownMenuRadioItem value="all">All mail</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="favorites">Starred</DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuCheckboxItem
-                    checked={includeSpam}
-                    onCheckedChange={onIncludeSpamChange}
-                  >
-                    Show spam
-                  </DropdownMenuCheckboxItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              {/* Sort */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" aria-label="Sort" title="Sort">
-                    <ArrowUpDown className="size-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44">
-                  <DropdownMenuLabel>Sort by date</DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    value={sort}
-                    onValueChange={(v) => onSortChange(v as MailSort)}
-                  >
-                    <DropdownMenuRadioItem value="date-desc">Newest first</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="date-asc">Oldest first</DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              {/* Multi-select */}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Select messages"
-                title="Select messages"
-                onClick={onToggleSelectionMode}
-              >
-                <ListChecks className="size-4" />
-              </Button>
-
-              {/* Collapse the list (desktop two-pane only) */}
-              {canCollapse && (
+            {/* Filter — search scope + view filters (search-type folded in here) */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  aria-label="Collapse list"
-                  title="Collapse list"
-                  onClick={onCollapse}
+                  aria-label="Filter"
+                  title="Filter"
+                  className={cn(filterActive && 'text-primary')}
                 >
-                  <PanelLeftClose className="size-4" />
+                  <ListFilter className="size-4" />
                 </Button>
-              )}
-            </div>
-          </div>
-        )}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuLabel>Search in</DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={field}
+                  onValueChange={(v) => onFieldChange(v as SearchField)}
+                >
+                  {FIELDS.map((f) => (
+                    <DropdownMenuRadioItem key={f.value} value={f.value}>
+                      {f.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Show</DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={favoriteOnly ? 'favorites' : 'all'}
+                  onValueChange={(v) => onFavoriteOnlyChange(v === 'favorites')}
+                >
+                  <DropdownMenuRadioItem value="all">All mail</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="favorites">Starred</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuCheckboxItem
+                  checked={includeSpam}
+                  onCheckedChange={onIncludeSpamChange}
+                >
+                  Show spam
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-        {!selectionMode && (
-          <div className="px-1 text-xs text-muted-foreground" aria-live="polite">
-            {countLabel}
-          </div>
+            {/* Sort */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label="Sort" title="Sort">
+                  <ArrowUpDown className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuLabel>Sort by date</DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={sort}
+                  onValueChange={(v) => onSortChange(v as MailSort)}
+                >
+                  <DropdownMenuRadioItem value="date-desc">Newest first</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="date-asc">Oldest first</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Multi-select */}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Select messages"
+              title="Select messages"
+              onClick={onToggleSelectionMode}
+            >
+              <ListChecks className="size-4" />
+            </Button>
+          </>
         )}
       </div>
 
@@ -435,37 +398,52 @@ export function MailList(props: Props) {
         )}
       </div>
 
-      {/* Pagination */}
-      {!isError && items.length > 0 && (
-        <div className="flex items-center justify-between gap-2 border-t px-4 py-2 text-xs text-muted-foreground">
-          <span>
-            {startIdx}–{endIdx} of {total}
-          </span>
-          <div className="flex items-center gap-1">
+      {/* Footer: collapse control (always, desktop) + pagination (when results exist) */}
+      {(canCollapse || (!isError && items.length > 0)) && (
+        <div className="flex items-center gap-2 border-t px-2 py-2 text-xs text-muted-foreground">
+          {canCollapse && (
             <Button
-              variant="outline"
-              size="icon"
-              className="size-7"
-              disabled={page <= 1}
-              onClick={() => onPageChange(page - 1)}
-              aria-label="Previous page"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Collapse list"
+              title="Collapse list"
+              onClick={onCollapse}
             >
-              <ChevronLeft className="size-4" />
+              <PanelLeftClose className="size-4" />
             </Button>
-            <span className="px-1 tabular-nums">
-              {page} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="icon"
-              className="size-7"
-              disabled={page >= totalPages}
-              onClick={() => onPageChange(page + 1)}
-              aria-label="Next page"
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
+          )}
+          {!isError && items.length > 0 && (
+            <>
+              <span className={cn('tabular-nums', !canCollapse && 'pl-2')}>
+                {startIdx}–{endIdx} of {total}
+              </span>
+              <div className="ml-auto flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-7"
+                  disabled={page <= 1}
+                  onClick={() => onPageChange(page - 1)}
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <span className="px-1 tabular-nums">
+                  {page} / {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-7"
+                  disabled={page >= totalPages}
+                  onClick={() => onPageChange(page + 1)}
+                  aria-label="Next page"
+                >
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       )}
 

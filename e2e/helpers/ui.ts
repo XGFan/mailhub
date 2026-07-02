@@ -13,9 +13,12 @@ export function searchBox(page: Page): Locator {
   return page.locator('input[aria-label="Search mail"]:visible');
 }
 
-/** Pick a search field (the visible toggle-group button). */
+/** Pick a search field via the toolbar Filter menu ("Search in" radio group). */
 export async function selectField(page: Page, field: Field): Promise<void> {
-  await page.locator(`button[aria-label="Search ${field}"]:visible`).click();
+  await page.getByRole('button', { name: 'Filter' }).click();
+  await page.getByRole('menuitemradio', { name: field, exact: true }).click();
+  // Close the menu (Radix keeps it open after a radio select).
+  await page.keyboard.press('Escape');
 }
 
 /** Switch the list filter (All mail / Starred) via the toolbar Filter menu. */

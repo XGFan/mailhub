@@ -80,21 +80,26 @@ export function DetailPlaceholder() {
 
 export function ListSkeleton({ rows = 9 }: { rows?: number }) {
   return (
-    <div className="divide-y" aria-hidden="true">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="flex gap-3 px-4 py-3">
-          <Skeleton className="size-9 shrink-0 rounded-full" />
-          <div className="flex-1 space-y-2">
-            <div className="flex justify-between gap-2">
-              <Skeleton className="h-3.5 w-32" />
-              <Skeleton className="h-3.5 w-10" />
+    <>
+      <span role="status" aria-live="polite" className="sr-only">
+        Loading messages…
+      </span>
+      <div className="divide-y" aria-hidden="true">
+        {Array.from({ length: rows }).map((_, i) => (
+          <div key={i} className="flex gap-3 px-4 py-3">
+            <Skeleton className="size-9 shrink-0 rounded-full" />
+            <div className="flex-1 space-y-2">
+              <div className="flex justify-between gap-2">
+                <Skeleton className="h-3.5 w-32" />
+                <Skeleton className="h-3.5 w-10" />
+              </div>
+              <Skeleton className="h-3.5 w-3/4" />
+              <Skeleton className="h-3 w-full" />
             </div>
-            <Skeleton className="h-3.5 w-3/4" />
-            <Skeleton className="h-3 w-full" />
           </div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    </>
   );
 }
 
