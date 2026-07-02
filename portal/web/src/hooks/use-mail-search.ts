@@ -40,6 +40,7 @@ export function useMailSearch(params: SearchParams): MailSearchState {
   }, [
     params.q,
     params.field,
+    params.sort,
     params.page,
     params.pageSize,
     params.includeSpam,

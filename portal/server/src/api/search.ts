@@ -6,14 +6,15 @@
  * without a live database — the callers build the Drizzle query and can assert
  * `.toSQL()`.
  */
-import type { SearchField } from '@mailhub/shared';
-import { and, desc, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
+import type { MailSort, SearchField } from '@mailhub/shared';
+import { and, asc, desc, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import { mails } from '../db/schema';
 
 export const DEFAULT_PAGE_SIZE = 50;
 export const MAX_PAGE_SIZE = 100;
 
 const VALID_FIELDS: readonly SearchField[] = ['all', 'to', 'from', 'subject'];
+const VALID_SORTS: readonly MailSort[] = ['date-desc', 'date-asc'];
 
 /** Thrown for invalid user input (mapped to HTTP 400 by the route). */
 export class SearchValidationError extends Error {}
@@ -22,6 +23,7 @@ export class SearchValidationError extends Error {}
 export interface NormalizedSearch {
   q: string;
   field: SearchField;
+  sort: MailSort;
   page: number;
   pageSize: number;
   includeSpam: boolean;
@@ -46,6 +48,7 @@ function toInt(value: unknown, fallback: number): number {
 export function normalizeSearchParams(raw: {
   q?: string;
   field?: string;
+  sort?: string;
   page?: string | number;
   pageSize?: string | number;
   includeSpam?: string | number | boolean;
@@ -56,12 +59,19 @@ export function normalizeSearchParams(raw: {
     throw new SearchValidationError(`invalid field: ${String(raw.field)}`);
   }
 
+  // An absent or unrecognized sort falls back to the newest-first default rather
+  // than a 400 — sort is a presentation preference, not a correctness gate.
+  const sort = (VALID_SORTS as readonly string[]).includes(raw.sort ?? '')
+    ? (raw.sort as MailSort)
+    : 'date-desc';
+
   const page = Math.max(1, toInt(raw.page, 1));
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, toInt(raw.pageSize, DEFAULT_PAGE_SIZE)));
 
   return {
     q: (raw.q ?? '').trim(),
     field,
+    sort,
     page,
     pageSize,
     includeSpam: toBool(raw.includeSpam),
@@ -112,7 +122,14 @@ export function buildWhereClause(p: NormalizedSearch): SQL | undefined {
   return conds.length === 1 ? conds[0] : and(...conds);
 }
 
-/** Default ordering: header date DESC (nulls last), then received_at DESC. */
-export function buildOrderBy(): SQL[] {
+/**
+ * Ordering by header date, tie-broken by received_at. Newest-first (the default)
+ * puts null header dates last; oldest-first puts them first, so undated mail
+ * never jumps the ordered head/tail.
+ */
+export function buildOrderBy(sort: MailSort = 'date-desc'): SQL[] {
+  if (sort === 'date-asc') {
+    return [sql`${mails.date} ASC NULLS FIRST`, asc(mails.receivedAt)];
+  }
   return [sql`${mails.date} DESC NULLS LAST`, desc(mails.receivedAt)];
 }

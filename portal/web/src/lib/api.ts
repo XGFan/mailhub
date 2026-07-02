@@ -2,6 +2,7 @@ import type {
   FavoriteResponse,
   IngestRunResponse,
   MailDetail,
+  MailSort,
   PortalSettings,
   SearchField,
   SearchResponse,
@@ -44,6 +45,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export interface SearchParams {
   q?: string;
   field?: SearchField;
+  sort?: MailSort;
   page?: number;
   pageSize?: number;
   includeSpam?: boolean;
@@ -55,6 +57,7 @@ export const api = {
     const qs = new URLSearchParams();
     if (params.q) qs.set('q', params.q);
     if (params.field) qs.set('field', params.field);
+    if (params.sort) qs.set('sort', params.sort);
     if (params.page) qs.set('page', String(params.page));
     if (params.pageSize) qs.set('pageSize', String(params.pageSize));
     if (params.includeSpam) qs.set('includeSpam', 'true');

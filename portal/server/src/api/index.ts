@@ -168,6 +168,7 @@ app.get('/api/mails', async (c) => {
     params = normalizeSearchParams({
       q: q.q,
       field: q.field,
+      sort: q.sort,
       page: q.page,
       pageSize: q.pageSize,
       includeSpam: q.includeSpam,
@@ -187,7 +188,7 @@ app.get('/api/mails', async (c) => {
     .select(LIST_COLUMNS)
     .from(mails)
     .where(where)
-    .orderBy(...buildOrderBy())
+    .orderBy(...buildOrderBy(params.sort))
     .limit(params.pageSize)
     .offset(offset);
 

@@ -78,12 +78,17 @@ export interface MailDetail extends MailListItem {
 /** Which column(s) a search query targets. `all` ORs to/from/subject. */
 export type SearchField = 'all' | 'to' | 'from' | 'subject';
 
+/** Sort order for the mail list: newest-first (default) or oldest-first. */
+export type MailSort = 'date-desc' | 'date-asc';
+
 /** Query parameters accepted by GET /api/mails. */
 export interface SearchQuery {
   /** Free-text substring (case-insensitive). Omit/empty ⇒ list newest. */
   q?: string;
   /** Target field; defaults to `all`. */
   field?: SearchField;
+  /** Sort order; defaults to `date-desc` (newest first). */
+  sort?: MailSort;
   /** 1-based page number; defaults to 1. */
   page?: number;
   /** Page size; defaults to 50, bounded to a server maximum (100). */

@@ -18,6 +18,14 @@ export async function selectField(page: Page, field: Field): Promise<void> {
   await page.locator(`button[aria-label="Search ${field}"]:visible`).click();
 }
 
+/** Switch the list filter (All mail / Starred) via the toolbar Filter menu. */
+export async function setFilter(page: Page, name: 'All mail' | 'Starred'): Promise<void> {
+  await page.getByRole('button', { name: 'Filter' }).click();
+  await page.getByRole('menuitemradio', { name, exact: true }).click();
+  // Close the menu (Radix keeps it open after a radio select).
+  await page.keyboard.press('Escape');
+}
+
 /** Type a query into the visible search box (debounced 300ms in the app). */
 export async function typeQuery(page: Page, q: string): Promise<void> {
   const box = searchBox(page);

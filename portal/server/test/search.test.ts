@@ -26,7 +26,7 @@ function toSQL(params: ReturnType<typeof normalizeSearchParams>) {
     .select({ id: mails.id })
     .from(mails)
     .where(buildWhereClause(params))
-    .orderBy(...buildOrderBy())
+    .orderBy(...buildOrderBy(params.sort))
     .limit(params.pageSize)
     .toSQL();
 }
@@ -65,6 +65,16 @@ describe('normalizeSearchParams', () => {
     expect(normalizeSearchParams({ favorite: 'true' }).favorite).toBe(true);
     expect(normalizeSearchParams({ favorite: true }).favorite).toBe(true);
     expect(normalizeSearchParams({}).favorite).toBe(false);
+  });
+
+  it('defaults sort to date-desc and accepts date-asc', () => {
+    expect(normalizeSearchParams({}).sort).toBe('date-desc');
+    expect(normalizeSearchParams({ sort: 'date-asc' }).sort).toBe('date-asc');
+    expect(normalizeSearchParams({ sort: 'date-desc' }).sort).toBe('date-desc');
+  });
+
+  it('falls back to date-desc for an unrecognized sort (never a 400)', () => {
+    expect(normalizeSearchParams({ sort: 'bogus' }).sort).toBe('date-desc');
   });
 });
 
@@ -129,5 +139,13 @@ describe('buildWhereClause SQL', () => {
     expect(lower).toContain('order by');
     expect(lower).toContain('"date" desc nulls last');
     expect(lower).toContain('received_at" desc');
+  });
+
+  it('orders by date ASC NULLS FIRST then received_at ASC when sort=date-asc', () => {
+    const { sql } = toSQL(normalizeSearchParams({ sort: 'date-asc' }));
+    const lower = sql.toLowerCase();
+    expect(lower).toContain('order by');
+    expect(lower).toContain('"date" asc nulls first');
+    expect(lower).toContain('received_at" asc');
   });
 });

@@ -22,14 +22,14 @@ never interferes with the monorepo's pnpm install.
 | `03-search` | AC5, AC12 | search by recipient / sender / subject (case-insensitive); no-results state |
 | `04-attachments` | AC7 | `/api/attachments/:id` + raw `.eml` are forced downloads (`Content-Disposition: attachment`, `application/octet-stream`, `nosniff`) |
 | `05-keyboard-responsive` | AC13 | ↑/↓ + Enter navigation; two-pane ≥1024px vs single-pane <1024px with Back |
-| `06-favorites-delete` | — | star/unstar from the reading pane; the Starred folder filter; delete via the confirm dialog |
-| `07-sender-sidebar` | — | header `From:` (not the envelope bounce address) is displayed, envelope surfaced as Return-Path; sidebar collapse/expand |
+| `06-favorites-delete` | — | star/unstar from the reading pane; the Starred list filter; delete via the confirm dialog |
+| `07-sender-list` | — | header `From:` (not the envelope bounce address) is displayed, envelope surfaced as Return-Path; mail-list collapse/expand + resize (desktop), single-pane phone |
 
 ## Latest result
 
 Run against the real stack (Postgres + MinIO + backend + built SPA, Chromium):
-**16/16 green** — all assertions pass, including the AC6b opt-in remote-images
-test (remote images load client-side when enabled). The process exits 0.
+all assertions pass, including the AC6b opt-in remote-images test (remote images
+load client-side when enabled). The process exits 0.
 
 ## Requirements
 

@@ -1,11 +1,50 @@
-import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import type { MailListItem } from '@mailhub/shared';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import {
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  ListChecks,
+  ListFilter,
+  PanelLeftClose,
+  Search,
+  Star,
+  StarOff,
+  Trash2,
+  X,
+} from 'lucide-react';
+import type { MailListItem, MailSort, SearchField } from '@mailhub/shared';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Switch } from '@/components/ui/switch';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { MailListRow } from '@/components/mail-list-item';
 import { EmptyInboxState, ErrorState, ListSkeleton, NoResultsState } from '@/components/states';
+import { cn } from '@/lib/utils';
+
+const FIELDS: { value: SearchField; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'to', label: 'To' },
+  { value: 'from', label: 'From' },
+  { value: 'subject', label: 'Subject' },
+];
 
 interface Props {
   items: MailListItem[];
@@ -14,9 +53,33 @@ interface Props {
   pageSize: number;
   selectedId: string | null;
   activeIndex: number;
+  // Search (lives above the list, Outlook-style).
   query: string;
+  rawQuery: string;
+  onQueryChange: (value: string) => void;
+  field: SearchField;
+  onFieldChange: (field: SearchField) => void;
   hasQuery: boolean;
+  // Filter.
+  favoriteOnly: boolean;
+  onFavoriteOnlyChange: (value: boolean) => void;
   includeSpam: boolean;
+  onIncludeSpamChange: (value: boolean) => void;
+  // Sort.
+  sort: MailSort;
+  onSortChange: (sort: MailSort) => void;
+  // Multi-select.
+  selectionMode: boolean;
+  onToggleSelectionMode: () => void;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onSelectAll: () => void;
+  onClearSelection: () => void;
+  onBatchFavorite: (ids: string[], next: boolean) => void;
+  // Collapse (desktop two-pane only).
+  canCollapse: boolean;
+  onCollapse: () => void;
+  // Status / data.
   isLoading: boolean;
   isError: boolean;
   errorMessage: string | null;
@@ -24,8 +87,9 @@ interface Props {
   onOpen: (index: number) => void;
   onActiveIndexChange: (index: number) => void;
   onPageChange: (page: number) => void;
-  onIncludeSpamChange: (value: boolean) => void;
   onToggleFavorite: (id: string, next: boolean) => void;
+  /** Delete one or many mails (already confirmed). Resolves when done. */
+  onDeleteMany: (ids: string[]) => Promise<void>;
 }
 
 export function MailList(props: Props) {
@@ -37,8 +101,26 @@ export function MailList(props: Props) {
     selectedId,
     activeIndex,
     query,
+    rawQuery,
+    onQueryChange,
+    field,
+    onFieldChange,
     hasQuery,
+    favoriteOnly,
+    onFavoriteOnlyChange,
     includeSpam,
+    onIncludeSpamChange,
+    sort,
+    onSortChange,
+    selectionMode,
+    onToggleSelectionMode,
+    selectedIds,
+    onToggleSelect,
+    onSelectAll,
+    onClearSelection,
+    onBatchFavorite,
+    canCollapse,
+    onCollapse,
     isLoading,
     isError,
     errorMessage,
@@ -46,11 +128,14 @@ export function MailList(props: Props) {
     onOpen,
     onActiveIndexChange,
     onPageChange,
-    onIncludeSpamChange,
     onToggleFavorite,
+    onDeleteMany,
   } = props;
 
   const listRef = useRef<HTMLDivElement>(null);
+  // Mails queued for the confirm dialog (one from a row menu, or the selection).
+  const [pendingDelete, setPendingDelete] = useState<MailListItem[] | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Keep the keyboard-active row scrolled into view.
   useEffect(() => {
@@ -77,12 +162,33 @@ export function MailList(props: Props) {
         e.preventDefault();
         onActiveIndexChange(items.length - 1);
         break;
-      case 'Enter':
+      case 'Enter': {
         e.preventDefault();
-        onOpen(activeIndex);
+        const item = items[activeIndex];
+        if (selectionMode && item) onToggleSelect(item.id);
+        else onOpen(activeIndex);
+        break;
+      }
+      case ' ':
+        if (selectionMode) {
+          e.preventDefault();
+          const item = items[activeIndex];
+          if (item) onToggleSelect(item.id);
+        }
         break;
       default:
         break;
+    }
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    try {
+      await onDeleteMany(pendingDelete.map((m) => m.id));
+      setPendingDelete(null);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -91,25 +197,197 @@ export function MailList(props: Props) {
   const endIdx = Math.min(total, page * pageSize);
   const activeDescId = items[activeIndex] ? `mail-opt-${items[activeIndex].id}` : undefined;
 
+  const selectedItems = items.filter((i) => selectedIds.has(i.id));
+  const allChecked = items.length > 0 && items.every((i) => selectedIds.has(i.id));
+  const filterActive = favoriteOnly || includeSpam;
+  const countLabel =
+    isLoading && items.length === 0
+      ? 'Loading…'
+      : hasQuery
+        ? `${total} result${total === 1 ? '' : 's'}`
+        : `${total} message${total === 1 ? '' : 's'}`;
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between gap-2 border-b px-4 py-2.5">
-        <span className="text-xs text-muted-foreground" aria-live="polite">
-          {isLoading && items.length === 0
-            ? 'Loading…'
-            : hasQuery
-              ? `${total} result${total === 1 ? '' : 's'}`
-              : `${total} message${total === 1 ? '' : 's'}`}
-        </span>
-        <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-          <span>Show spam</span>
-          <Switch
-            checked={includeSpam}
-            onCheckedChange={onIncludeSpamChange}
-            aria-label="Show spam messages"
+      {/* Search + toolbar (Outlook-style, above the list) */}
+      <div className="space-y-2 border-b px-3 py-2.5">
+        <div className="relative">
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
           />
-        </label>
+          <Input
+            type="search"
+            value={rawQuery}
+            onChange={(e) => onQueryChange(e.target.value)}
+            placeholder="Search mail…"
+            aria-label="Search mail"
+            className="pl-9"
+          />
+        </div>
+
+        {selectionMode ? (
+          <div className="flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={allChecked}
+              onChange={() => (allChecked ? onClearSelection() : onSelectAll())}
+              aria-label="Select all on this page"
+              className="ml-1 size-4 accent-primary"
+            />
+            <span className="ml-1 text-xs font-medium" aria-live="polite">
+              {selectedIds.size} selected
+            </span>
+            <div className="ml-auto flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Star selected"
+                title="Star selected"
+                disabled={selectedItems.length === 0}
+                onClick={() => onBatchFavorite(selectedItems.map((m) => m.id), true)}
+              >
+                <Star className="size-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Unstar selected"
+                title="Unstar selected"
+                disabled={selectedItems.length === 0}
+                onClick={() => onBatchFavorite(selectedItems.map((m) => m.id), false)}
+              >
+                <StarOff className="size-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Delete selected"
+                title="Delete selected"
+                disabled={selectedItems.length === 0}
+                className="text-muted-foreground hover:text-destructive"
+                onClick={() => setPendingDelete(selectedItems)}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Cancel selection"
+                title="Cancel selection"
+                onClick={onToggleSelectionMode}
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1">
+            <ToggleGroup
+              type="single"
+              value={field}
+              onValueChange={(value) => value && onFieldChange(value as SearchField)}
+              variant="outline"
+              size="sm"
+              aria-label="Search field"
+              className="shrink-0"
+            >
+              {FIELDS.map((f) => (
+                <ToggleGroupItem
+                  key={f.value}
+                  value={f.value}
+                  aria-label={`Search ${f.label}`}
+                  className="px-2 text-xs"
+                >
+                  {f.label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+
+            <div className="ml-auto flex items-center gap-0.5">
+              {/* Filter */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Filter"
+                    title="Filter"
+                    className={cn(filterActive && 'text-primary')}
+                  >
+                    <ListFilter className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuLabel>Show</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={favoriteOnly ? 'favorites' : 'all'}
+                    onValueChange={(v) => onFavoriteOnlyChange(v === 'favorites')}
+                  >
+                    <DropdownMenuRadioItem value="all">All mail</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="favorites">Starred</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuCheckboxItem
+                    checked={includeSpam}
+                    onCheckedChange={onIncludeSpamChange}
+                  >
+                    Show spam
+                  </DropdownMenuCheckboxItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Sort */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon-sm" aria-label="Sort" title="Sort">
+                    <ArrowUpDown className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuLabel>Sort by date</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={sort}
+                    onValueChange={(v) => onSortChange(v as MailSort)}
+                  >
+                    <DropdownMenuRadioItem value="date-desc">Newest first</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="date-asc">Oldest first</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Multi-select */}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Select messages"
+                title="Select messages"
+                onClick={onToggleSelectionMode}
+              >
+                <ListChecks className="size-4" />
+              </Button>
+
+              {/* Collapse the list (desktop two-pane only) */}
+              {canCollapse && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Collapse list"
+                  title="Collapse list"
+                  onClick={onCollapse}
+                >
+                  <PanelLeftClose className="size-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!selectionMode && (
+          <div className="px-1 text-xs text-muted-foreground" aria-live="polite">
+            {countLabel}
+          </div>
+        )}
       </div>
 
       {/* Body */}
@@ -119,7 +397,7 @@ export function MailList(props: Props) {
         ) : isLoading && items.length === 0 ? (
           <ListSkeleton />
         ) : items.length === 0 ? (
-          hasQuery ? (
+          hasQuery || favoriteOnly ? (
             <NoResultsState query={query} />
           ) : (
             <EmptyInboxState />
@@ -143,8 +421,12 @@ export function MailList(props: Props) {
                     isSelected={item.id === selectedId}
                     isActive={index === activeIndex}
                     query={query}
+                    selectionMode={selectionMode}
+                    isChecked={selectedIds.has(item.id)}
                     onClick={() => onOpen(index)}
+                    onToggleSelect={() => onToggleSelect(item.id)}
                     onToggleFavorite={onToggleFavorite}
+                    onRequestDelete={(m) => setPendingDelete([m])}
                   />
                 </div>
               ))}
@@ -186,6 +468,34 @@ export function MailList(props: Props) {
           </div>
         </div>
       )}
+
+      {/* Shared delete confirmation (row menu or batch selection) */}
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !deleting && !open && setPendingDelete(null)}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {pendingDelete && pendingDelete.length > 1
+                ? `Delete ${pendingDelete.length} messages?`
+                : 'Delete this message?'}
+            </DialogTitle>
+            <DialogDescription>
+              This permanently removes the {pendingDelete && pendingDelete.length > 1 ? 'messages' : 'message'},
+              their attachments, and the archived originals from the server. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingDelete(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
+              {deleting ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

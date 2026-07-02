@@ -1,5 +1,5 @@
 /**
- * Sender enrichment + the collapsible sidebar.
+ * Sender enrichment + the collapsible / resizable mail list.
  *
  * Sender: a mail whose SMTP envelope sender (an opaque bounce / return-path
  * address) differs from its header `From:` must be DISPLAYED by the human-
@@ -52,35 +52,53 @@ test('displays the header From, not the envelope bounce address', async ({ page 
   await expect(article).toContainText(`Return-Path: ${envelopeFrom}`);
 });
 
-test('the sidebar collapses and expands', async ({ page }) => {
+test('the message list collapses and expands (desktop)', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/');
 
-  // Expanded by default (no persisted preference): the labelled nav is visible.
-  const collapse = page.getByRole('button', { name: 'Collapse sidebar' });
+  const list = page.locator('section[aria-label="Message list"]');
+
+  // Expanded by default (no persisted preference): the list and its collapse
+  // control are visible.
+  const collapse = page.getByRole('button', { name: 'Collapse list' });
   await expect(collapse).toBeVisible();
+  await expect(list).toBeVisible();
 
   await collapse.click();
 
-  // Collapsed: the toggle flips to "Expand sidebar".
-  const expand = page.getByRole('button', { name: 'Expand sidebar' });
+  // Collapsed: the list is hidden and a slim rail exposes the expand control.
+  const expand = page.getByRole('button', { name: 'Expand list' });
   await expect(expand).toBeVisible();
+  await expect(list).toBeHidden();
 
   await expand.click();
-  await expect(page.getByRole('button', { name: 'Collapse sidebar' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Collapse list' })).toBeVisible();
+  await expect(list).toBeVisible();
 });
 
-test('the sidebar stays a compact icon rail on a phone viewport', async ({ page }) => {
+test('the list is resizable via the separator (desktop)', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/');
+
+  const list = page.locator('section[aria-label="Message list"]');
+  const separator = page.getByRole('separator', { name: 'Resize message list' });
+  await expect(separator).toBeVisible();
+
+  const before = (await list.boundingBox())!.width;
+  // Keyboard nudges are the deterministic path (arrow keys widen the column).
+  await separator.focus();
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight');
+  const after = (await list.boundingBox())!.width;
+  expect(after).toBeGreaterThan(before);
+});
+
+test('the list has no collapse/resize affordances on a phone viewport', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
 
-  // Folder switch stays reachable (icon-only), but the collapse toggle is hidden
-  // so an expanded rail can't eat the narrow screen.
-  await expect(page.getByRole('button', { name: 'Starred', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Collapse sidebar' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Expand sidebar' })).toHaveCount(0);
-
-  // The rail is the ~56px (w-14) icon rail, not the 192px (w-48) expanded one.
-  const box = await page.getByRole('complementary', { name: 'Folders' }).boundingBox();
-  expect(box).not.toBeNull();
-  expect(box!.width).toBeLessThan(80);
+  // Single-pane on a phone: no collapse toggle and no resize separator, but the
+  // list toolbar (Filter) is still reachable.
+  await expect(page.getByRole('button', { name: 'Collapse list' })).toHaveCount(0);
+  await expect(page.getByRole('separator', { name: 'Resize message list' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Filter' })).toBeVisible();
 });
