@@ -72,7 +72,7 @@ services:
       R2_SECRET_ACCESS_KEY: mailhub-secret
       R2_BUCKET: mailhub-raw
       PORT: '8787'
-      POLL_INTERVAL_MS: '30000'
+      POLL_INTERVAL_MS: '60000'
       ATTACHMENT_DIR: /data/attachments
       MAX_MAIL_BYTES: '27262976'
       RETENTION_DAYS: '7'

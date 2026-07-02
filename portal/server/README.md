@@ -104,10 +104,12 @@ All settings are environment variables (see `.env.example`):
 | `R2_SECRET_ACCESS_KEY` | Yes | — | R2 API token secret key |
 | `R2_BUCKET` | No | `mailhub-raw` | R2 bucket name |
 | `PORT` | No | `8787` | HTTP listen port |
-| `POLL_INTERVAL_MS` | No | `30000` | Ingestor poll interval (ms) |
+| `POLL_INTERVAL_MS` | No | `60000` | Idle poll ceiling (ms) — top of the adaptive backoff ladder |
 | `ATTACHMENT_DIR` | No | `./data/attachments` | Where attachment files are written |
 | `MAX_MAIL_BYTES` | No | `27262976` | Reject messages larger than this |
 | `RETENTION_DAYS` | No | `7` | Auto-purge mail older than N days |
+| `API_KEYS` | No | — | Comma-separated keys gating `/api/*` (unset = open) |
+| `SIGNAL_KEY` | No | — | Shared secret gating `POST /api/signal` (unset = endpoint hidden) |
 
 ## API endpoints
 
@@ -120,14 +122,20 @@ See [`docs/API.md`](../../docs/API.md) for full reference.
 - `GET /api/mails/:id` — full detail
 - `GET /api/mails/:id/raw` — download raw .eml
 - `GET /api/attachments/:id` — download attachment
-- `POST /api/ingest/run` — manual ingest trigger
+- `POST /api/ingest/run` — manual ingest trigger ("Fetch now")
+- `POST /api/signal` — Worker "new mail" nudge (gated by `SIGNAL_KEY`; 404 when unset)
 - `GET/PUT /api/settings` — portal settings (showRemoteImages)
 
 ## Architecture
 
 ### Ingestor (singleton loop)
 
-Runs every `POLL_INTERVAL_MS` (default 30s):
+Adaptive cadence: after any pass that sees mail it re-checks in **5s**, then
+relaxes **10s → 30s → `POLL_INTERVAL_MS`** (default 60s) as the inbox stays
+empty. A Cloudflare Worker nudge (`POST /api/signal`, Path B) can trigger a pass
+immediately, collapsing new-mail latency to ~1s; the poll is the safety net.
+
+Each pass:
 
 1. **LIST:** Paginated `ListObjectsV2({Prefix: "inbox/", MaxKeys: 100})`
 2. **GET:** Fetch each object (with size cap)
@@ -135,7 +143,7 @@ Runs every `POLL_INTERVAL_MS` (default 30s):
 4. **Store:** `INSERT ... ON CONFLICT (r2_key) DO NOTHING` (idempotency)
 5. **Attachments:** Write parsed attachments to PVC
 6. **Delete:** Remove from `inbox/` after successful commit
-7. **Backoff:** Exponential backoff on consecutive errors (prevents hammering)
+7. **Backoff:** Exponential backoff on consecutive infra errors (prevents hammering)
 
 Failed parses move to `dead/` (visible in R2 console).
 
@@ -203,7 +211,7 @@ For production k8s deployment, see [`docs/SETUP.md`](../../docs/SETUP.md#kuberne
 
 ### Monitoring
 
-- **Ingest lag:** `oldest(inbox/) age` should stay < 60s. Alert if > 2 × POLL_INTERVAL.
+- **Ingest lag:** `oldest(inbox/) age` should stay under the idle ceiling (`POLL_INTERVAL_MS`, default 60s). Alert if > 2 × that.
 - **Parse failures:** Count objects in `dead/` bucket. Monitor for spikes.
 - **PVC usage:** Attachments grow ~500 MB/day per 1,000 mails. Monitor `df -h /data/attachments`.
 - **Postgres:** Monitor locks and long-running queries (especially search on large result sets).

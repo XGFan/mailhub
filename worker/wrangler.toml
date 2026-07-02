@@ -13,3 +13,10 @@ compatibility_flags = ["nodejs_compat"]
 [[r2_buckets]]
 binding = "RAW_MAIL"
 bucket_name = "mailhub-raw"
+
+# Portal "new mail" signal endpoint (Path B). Plaintext var; the matching secret
+# SIGNAL_KEY is set out-of-band via `wrangler secret put SIGNAL_KEY` (never in
+# this file). When BOTH are present the Worker nudges the portal after each R2
+# write so it ingests immediately; leave unset to fall back to portal poll-only.
+[vars]
+SIGNAL_URL = "https://mail-signal.test4x.com/api/signal"

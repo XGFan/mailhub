@@ -269,7 +269,7 @@ X-Content-Type-Options: nosniff
 
 ### POST `/api/ingest/run`
 
-Manually trigger an ingest pass to pull pending mail from R2 immediately (instead of waiting for the next 30-second poll cycle).
+Manually trigger an ingest pass to pull pending mail from R2 immediately (instead of waiting for the next adaptive poll, whose idle ceiling is `POLL_INTERVAL_MS`, default 60s). This is the UI "Fetch now" button.
 
 **Response:**
 ```json
@@ -292,6 +292,30 @@ Manually trigger an ingest pass to pull pending mail from R2 immediately (instea
 
 **Errors:**
 - **429** — rate limited
+
+---
+
+### POST `/api/signal`
+
+Machine "new mail" nudge from the Cloudflare Email Worker (Path B). On each
+inbound message the Worker best-effort POSTs here so the portal ingests within
+~1s instead of waiting for the poll. Triggers the same debounced pass as
+`/api/ingest/run`.
+
+**Auth:** gated by its **own** shared secret, presented as `X-Signal-Key: <key>`
+and compared timing-safe against the `SIGNAL_KEY` env var. This gate is
+**independent** of the global `API_KEYS` gate — enabling `API_KEYS` does not
+affect it, and vice versa.
+
+**Response:** same shape as `/api/ingest/run` (`started`, `alreadyRunning`).
+
+**Notes:**
+- Debounced (shares the ingest lock); a burst just returns `alreadyRunning`.
+- No IP rate limit — the caller is authenticated and the work is debounced.
+
+**Errors:**
+- **404** — `SIGNAL_KEY` is unset (the endpoint is hidden until configured)
+- **401** — missing or wrong `X-Signal-Key`
 
 ---
 

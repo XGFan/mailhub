@@ -17,7 +17,7 @@ export interface Config {
   r2SecretAccessKey: string;
   /** R2 bucket name that buffers raw MIME. */
   r2Bucket: string;
-  /** Ingestor poll interval in milliseconds. */
+  /** Ingestor idle poll ceiling (ms) — the top of the adaptive backoff ladder. */
   pollIntervalMs: number;
   /** Directory where parsed attachment bytes are written. */
   attachmentDir: string;
@@ -31,6 +31,12 @@ export interface Config {
    * default. Parsed from the comma-separated `API_KEYS` env var.
    */
   apiKeys: string[];
+  /**
+   * Optional shared secret gating the Worker "new mail" nudge (`POST /api/signal`).
+   * Empty (unset) hides that endpoint (404) — off by default, independent of
+   * `apiKeys`. Read from `SIGNAL_KEY`.
+   */
+  signalKey: string;
 }
 
 function num(name: string, fallback: number): number {
@@ -62,11 +68,12 @@ export const config: Config = {
   r2AccessKeyId: str('R2_ACCESS_KEY_ID'),
   r2SecretAccessKey: str('R2_SECRET_ACCESS_KEY'),
   r2Bucket: str('R2_BUCKET', 'mailhub-raw'),
-  pollIntervalMs: num('POLL_INTERVAL_MS', 30_000),
+  pollIntervalMs: num('POLL_INTERVAL_MS', 60_000),
   attachmentDir: str('ATTACHMENT_DIR', './data/attachments'),
   maxMailBytes: num('MAX_MAIL_BYTES', 27_262_976),
   retentionDays: num('RETENTION_DAYS', 7),
   apiKeys: arr('API_KEYS'),
+  signalKey: str('SIGNAL_KEY'),
 };
 
 // Guard against a silently-open misconfiguration: if API_KEYS carries something

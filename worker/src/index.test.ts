@@ -83,3 +83,51 @@ describe("handleEmail", () => {
     await expect(handleEmail(message, env, ctx)).rejects.toThrow("R2 unavailable");
   });
 });
+
+describe("handleEmail — portal signal nudge (Path B)", () => {
+  const signalEnv = (): Bindings => ({
+    RAW_MAIL: { put: vi.fn().mockResolvedValue(null) } as unknown as R2Bucket,
+    SIGNAL_URL: "https://mail-signal.example/api/signal",
+    SIGNAL_KEY: "sig-key",
+  });
+
+  /** ctx whose waitUntil records the fire-and-forget promise so we can await it. */
+  function capturingCtx(pending: Promise<unknown>[]): ExecutionContext {
+    return { waitUntil: (p: Promise<unknown>) => pending.push(p) } as unknown as ExecutionContext;
+  }
+
+  it("does NOT nudge when SIGNAL_URL/SIGNAL_KEY are unconfigured", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { env } = mockEnv();
+    await handleEmail(mockMessage(), env, {} as ExecutionContext);
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("fires a best-effort POST with the signal key after the R2 write when configured", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const pending: Promise<unknown>[] = [];
+
+    await handleEmail(mockMessage(), signalEnv(), capturingCtx(pending));
+    await Promise.all(pending);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://mail-signal.example/api/signal");
+    expect(init.method).toBe("POST");
+    expect(init.headers["X-Signal-Key"]).toBe("sig-key");
+    vi.unstubAllGlobals();
+  });
+
+  it("swallows a nudge failure — the mail is already in R2, so handleEmail must not reject", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("edge unreachable"));
+    vi.stubGlobal("fetch", fetchMock);
+    const pending: Promise<unknown>[] = [];
+
+    await expect(handleEmail(mockMessage(), signalEnv(), capturingCtx(pending))).resolves.toBeUndefined();
+    await expect(Promise.all(pending)).resolves.toBeDefined(); // .catch() neutralizes the rejection
+    vi.unstubAllGlobals();
+  });
+});

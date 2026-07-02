@@ -107,6 +107,11 @@ function isValidApiKey(candidate: string, keys: readonly string[]): boolean {
 }
 
 app.use('/api/*', async (c, next) => {
+  // The Worker "new mail" nudge carries its OWN key gate (SIGNAL_KEY) in the
+  // handler below, so it is exempt from the global API_KEYS gate: enabling
+  // API_KEYS must not break the Worker, and the signal must stay reachable
+  // regardless of that opt-in feature.
+  if (c.req.path === '/api/signal') return next();
   const keys = config.apiKeys;
   if (keys.length === 0) return next();
   const candidate = extractApiKey(c);
@@ -452,6 +457,29 @@ app.post('/api/ingest/run', (c) => {
     return c.json({ started: false, alreadyRunning: true });
   }
   void runIngestPass().catch((err) => console.error('[ingest] manual run failed', err));
+  return c.json({ started: true, alreadyRunning: false });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/signal — machine "new mail" nudge from the Cloudflare Worker (Path B).
+// Gated by its OWN shared secret (SIGNAL_KEY), independent of the global API_KEYS
+// gate above, so toggling API_KEYS never affects it. An unset SIGNAL_KEY hides
+// the endpoint (404) — it is invisible until deliberately configured. No IP rate
+// limit: the caller is authenticated and the work is debounced (isIngestRunning),
+// so a burst just returns alreadyRunning cheaply — rate limiting would only add
+// latency to the exact fast path Path B exists to provide.
+// ---------------------------------------------------------------------------
+app.post('/api/signal', (c) => {
+  const configured = config.signalKey;
+  if (!configured) return c.json({ error: 'not found' }, 404);
+  const presented = c.req.header('x-signal-key');
+  if (!presented || !isValidApiKey(presented, [configured])) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+  if (isIngestRunning()) {
+    return c.json({ started: false, alreadyRunning: true });
+  }
+  void runIngestPass().catch((err) => console.error('[signal] ingest failed', err));
   return c.json({ started: true, alreadyRunning: false });
 });
 

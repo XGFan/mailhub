@@ -30,26 +30,38 @@ At **1,000 mails/day** with a **30-second poll interval**, all dimensions remain
 
 ## AC9 Cost Verification (computed check)
 
-At the chosen settings (**POLL_INTERVAL = 30s**, **~1,000 mails/day**), here's the math:
+At the chosen settings (**POLL_INTERVAL_MS = 60s idle ceiling**, adaptive ladder,
+**~1,000 mails/day**), here's the math:
 
 ### R2 Class A operations (the bottleneck)
 
-**Formula per day:**
+The poll cadence is adaptive — 5s right after activity, relaxing 10s → 30s → 60s
+as the inbox stays empty — so LIST volume tracks how idle the inbox is. A personal
+mailbox sits idle almost all day, so the steady-state 60s ceiling dominates.
+
+**Formula per day (nominal, mostly idle):**
 - Worker `PUT` (1 per email): 1,000 × 1 = **1,000**
 - Ingestor `DELETE` (1 per email after parse): 1,000 × 1 = **1,000**
-- Ingestor `LIST` (paginated, ~100 keys per page): 86,400 seconds/day ÷ 30s = **2,880 LISTs/day**
+- Ingestor `LIST` at the 60s idle ceiling: 86,400 ÷ 60 = **1,440 LISTs/day**
+  (brief 5s bursts during actual mail arrival are a tiny fraction of the day)
 - (Dead-letter ops negligible for nominal systems)
 
-**Total:** 1,000 + 1,000 + 2,880 = **4,880 Class A operations/day**
+**Total:** 1,000 + 1,000 + 1,440 = **3,440 Class A operations/day**
 
 **Free limit:** 33,333/day
-**Headroom:** 33,333 ÷ 4,880 = **≈ 6.8×** ✓
+**Headroom:** 33,333 ÷ 3,440 = **≈ 9.7×** ✓ (better than the old fixed-30s 6.8×,
+because idle now polls at 60s instead of 30s)
+
+**Worst case** (loop pinned at the 5s floor by continuous inbound): LIST =
+86,400 ÷ 5 = 17,280/day → total 19,280 → headroom **≈ 1.7×**. Still **$0** (under
+the free limit), and pathological for a personal mailbox — a backlog drains in a
+single pass, after which the ladder relaxes back toward 60s.
 
 Even at **10,000 mails/day** (10× nominal), Class A usage would be:
 - PUTs: 10,000
 - DELETEs: 10,000
-- LISTs: 2,880 (unchanged; polling rate is fixed)
-- **Total:** 22,880 → **headroom = 1.46×** (still safe)
+- LISTs: ~1,440 (idle-dominated; adaptive ladder)
+- **Total:** ~21,440 → **headroom ≈ 1.55×** (still safe)
 
 ### R2 Class B operations
 

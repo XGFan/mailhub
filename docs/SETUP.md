@@ -200,7 +200,7 @@ spec:
               name: mailhub-secrets
               key: r2-bucket
         - name: POLL_INTERVAL_MS
-          value: "30000"
+          value: "60000"
         - name: ATTACHMENT_DIR
           value: "/data/attachments"
         - name: MAX_MAIL_BYTES
@@ -310,10 +310,12 @@ Instead of `kubectl port-forward`, use a VPN:
 | `R2_SECRET_ACCESS_KEY` | Yes | — | R2 API token secret key |
 | `R2_BUCKET` | No | `mailhub-raw` | R2 bucket name |
 | `PORT` | No | `8787` | HTTP listen port |
-| `POLL_INTERVAL_MS` | No | `30000` | Ingestor poll interval (milliseconds) |
+| `POLL_INTERVAL_MS` | No | `60000` | Ingestor idle poll ceiling (ms) — top of the adaptive backoff ladder |
 | `ATTACHMENT_DIR` | No | `./data/attachments` | Where attachment bytes are stored (PVC path in k8s) |
 | `MAX_MAIL_BYTES` | No | `27262976` (~26 MiB) | Reject raw messages larger than this |
 | `RETENTION_DAYS` | No | `7` | Auto-purge mail older than this many days |
+| `API_KEYS` | No | — | Comma-separated keys gating `/api/*` (unset = open) |
+| `SIGNAL_KEY` | No | — | Shared secret gating `POST /api/signal` (unset = hidden) |
 
 ---
 

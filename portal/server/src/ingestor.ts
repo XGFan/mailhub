@@ -33,7 +33,27 @@ const PARSE_TIMEOUT_MS = 15_000;
 const MAX_BACKOFF_MS = 15 * 60_000;
 const INITIAL_PASS_DELAY_MS = 2_000;
 
+/**
+ * Healthy-path poll cadence is adaptive: right after activity re-check quickly,
+ * then climb these warm-up rungs (ms) before settling at the configured idle
+ * ceiling (`POLL_INTERVAL_MS`). Each rung is clamped to the ceiling, so a small
+ * ceiling (e.g. e2e's 3s) flattens the ladder. Mail arriving during deep idle
+ * waits at most one ceiling interval — the accepted poll-vs-push trade-off.
+ */
+const IDLE_WARMUP_MS = [5_000, 10_000, 30_000];
+
+/**
+ * Base for infra-error backoff, kept independent of the idle ceiling so raising
+ * the ceiling never slows recovery from a transient LIST failure.
+ */
+const ERROR_BACKOFF_BASE_MS = 30_000;
+
 let isRunning = false;
+/**
+ * Consecutive empty passes; drives the healthy-path backoff ladder. Reset to 0
+ * by any pass (poll, manual, or Worker signal) that sees a non-empty inbox.
+ */
+let idleStreak = 0;
 
 /** Is an ingest pass currently in flight? (debounce for the manual trigger.) */
 export function isIngestRunning(): boolean {
@@ -42,7 +62,10 @@ export function isIngestRunning(): boolean {
 
 /** Result of one ingest pass. */
 export interface IngestPassResult {
+  /** New mail rows inserted this pass. */
   processed: number;
+  /** Objects seen in the inbox listing this pass (drives the poll cadence). */
+  listed: number;
 }
 
 /**
@@ -52,9 +75,10 @@ export interface IngestPassResult {
  * Throws only on LIST-level infra failures, which the poller backs off on.
  */
 export async function runIngestPass(): Promise<IngestPassResult> {
-  if (isRunning) return { processed: 0 };
+  if (isRunning) return { processed: 0, listed: 0 };
   isRunning = true;
   let processed = 0;
+  let listed = 0;
   try {
     // Load the block rules once per pass (not per object) — the set is small and
     // changes rarely, so a single SELECT amortizes across the whole backlog.
@@ -62,6 +86,7 @@ export async function runIngestPass(): Promise<IngestPassResult> {
       .select({ ruleType: blockRules.ruleType, value: blockRules.value })
       .from(blockRules);
     const objects = await listInbox();
+    listed = objects.length;
     for (const obj of objects) {
       try {
         if (await processObject(obj, rules)) processed++;
@@ -77,7 +102,11 @@ export async function runIngestPass(): Promise<IngestPassResult> {
   } finally {
     isRunning = false;
   }
-  return { processed };
+  // Warm the poll cadence while mail is flowing; let it relax toward the idle
+  // ceiling when the inbox comes up empty. Every caller (poll / manual "Fetch
+  // now" / Worker signal) funnels through here, so the ladder stays coherent.
+  idleStreak = listed > 0 ? 0 : idleStreak + 1;
+  return { processed, listed };
 }
 
 /** Process one inbox object. Returns true if a new mail row was inserted. */
@@ -203,11 +232,27 @@ async function processObject(
 let backoffTimer: NodeJS.Timeout | null = null;
 let consecutiveErrors = 0;
 
-/** Backoff delay: pollInterval * 2^errors, capped, plus up to 1s jitter. */
+/**
+ * Healthy-path delay for a given idle streak: climb the warm-up rungs, then
+ * settle at the ceiling. Pure + exported for tests. Each rung is clamped to the
+ * ceiling, so a ceiling below a rung (e.g. e2e's 3s) just flattens the ladder.
+ */
+export function healthyDelayMs(streak: number, ceilingMs: number): number {
+  const rung = streak < IDLE_WARMUP_MS.length ? IDLE_WARMUP_MS[streak] : ceilingMs;
+  return Math.min(rung, ceilingMs);
+}
+
+/**
+ * Next poll delay. Infra errors dominate: exponential backoff from a fixed base
+ * (independent of the idle ceiling), capped, with jitter. Otherwise follow the
+ * adaptive healthy-path ladder keyed on the current idle streak.
+ */
 function nextDelay(): number {
-  if (consecutiveErrors === 0) return config.pollIntervalMs;
-  const exp = config.pollIntervalMs * 2 ** Math.min(consecutiveErrors, 8);
-  return Math.min(exp, MAX_BACKOFF_MS) + Math.floor(Math.random() * 1000);
+  if (consecutiveErrors > 0) {
+    const exp = ERROR_BACKOFF_BASE_MS * 2 ** Math.min(consecutiveErrors, 8);
+    return Math.min(exp, MAX_BACKOFF_MS) + Math.floor(Math.random() * 1000);
+  }
+  return healthyDelayMs(idleStreak, config.pollIntervalMs);
 }
 
 /**

@@ -59,6 +59,7 @@ cd e2e && npm test
 - **Attachment storage:** Uses PVC (`/data/attachments`) in k8s; size-capped at `MAX_MAIL_BYTES` (~26 MiB).
 - **Block rules (拒收):** DB-backed rules (`block_rules`, address or domain incl. subdomains) drop matching mail **at portal ingest** (R2 object deleted, nothing archived). Not retroactive; not enforced in the Worker (it has no DB access and must stay lightweight). Matching target is the header `From:` with envelope fallback — same semantics as sender display.
 - **API keys:** Optional `API_KEYS` env (comma-separated). When set, `/api/*` requires `X-API-Key` or `Authorization: Bearer` (timing-safe compare); `/healthz`/`/readyz`/static SPA stay open. When unset, zero behavior change. The web UI can store a key in localStorage (Settings) — it is never persisted server-side.
+- **Ingest cadence (adaptive) & push signal:** The singleton ingestor polls R2 on an adaptive backoff ladder — after any pass that sees mail it re-checks in 5s, then relaxes 10s → 30s → `POLL_INTERVAL_MS` (idle ceiling, default 60s). A best-effort nudge from the Worker (`POST /api/signal`, gated by `SIGNAL_KEY`) triggers an immediate pass so new mail lands in ~1s (**Path B**); the poll is the safety net — a dropped signal just waits for the next poll (mail is buffered in R2, never lost). `SIGNAL_KEY` is **independent** of `API_KEYS`; unset hides the endpoint (404). The Worker reaches the portal over the existing frp edge (a tinyauth-free Ingress `mail-signal.test4x.com/api/signal`), not a new Cloudflare Tunnel.
 
 ## Tailwind v4 (CSS-First)
 

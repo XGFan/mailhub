@@ -15,6 +15,14 @@
 export interface Bindings {
   /** R2 bucket that buffers raw inbound MIME (see wrangler.toml). */
   RAW_MAIL: R2Bucket;
+  /**
+   * Optional portal "new mail" signal endpoint + its shared secret (Path B).
+   * When BOTH are set, a best-effort nudge is POSTed after the R2 write so the
+   * portal ingests immediately instead of waiting for its next poll. Unset in
+   * dev/tests → no nudge. SIGNAL_URL is a plaintext var; SIGNAL_KEY is a secret.
+   */
+  SIGNAL_URL?: string;
+  SIGNAL_KEY?: string;
 }
 
 /**
@@ -36,8 +44,6 @@ export async function handleEmail(
   env: Bindings,
   ctx: ExecutionContext,
 ): Promise<void> {
-  void ctx;
-
   const key = `inbox/${Date.now()}-${crypto.randomUUID()}.eml`;
 
   // message.raw is a length-unknown ReadableStream — R2 put() needs a sized
@@ -51,6 +57,19 @@ export async function handleEmail(
     httpMetadata: { contentType: "message/rfc822" },
     customMetadata: { to: san(message.to), from: san(message.from) },
   });
+
+  // Best-effort "new mail" nudge to the portal (Path B) so it ingests within
+  // ~1s instead of waiting for the next poll. Fire-and-forget via waitUntil:
+  // the mail is already durably in R2, so a slow/failed signal must NEVER fail
+  // this handler — the portal's poll is the safety net. Only when configured.
+  if (env.SIGNAL_URL && env.SIGNAL_KEY) {
+    ctx.waitUntil(
+      fetch(env.SIGNAL_URL, {
+        method: "POST",
+        headers: { "X-Signal-Key": env.SIGNAL_KEY },
+      }).catch(() => {}),
+    );
+  }
 }
 
 export default {

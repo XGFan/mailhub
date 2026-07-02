@@ -39,7 +39,7 @@
      --from-literal=R2_SECRET_ACCESS_KEY='<secret>' \
      --from-literal=R2_BUCKET='mailhub-raw' \
      --from-literal=PORT='8787' \
-     --from-literal=POLL_INTERVAL_MS='30000' \
+     --from-literal=POLL_INTERVAL_MS='60000' \
      --from-literal=ATTACHMENT_DIR='/data/attachments' \
      --from-literal=MAX_MAIL_BYTES='27262976' \
      --from-literal=RETENTION_DAYS='7'
