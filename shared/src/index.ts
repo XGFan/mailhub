@@ -129,3 +129,26 @@ export interface PortalSettings {
   /** When true, remote images in HTML mail load client-side (never server-side). */
   showRemoteImages: boolean;
 }
+
+/**
+ * What a block rule matches against: a full email address, or a domain
+ * (which also covers all of its subdomains).
+ */
+export type BlockRuleType = 'address' | 'domain';
+
+/** A single block (拒收) rule. Matching mail is dropped at ingest time. */
+export interface BlockRule {
+  /** Server-generated UUID primary key. */
+  id: string;
+  /** Whether `value` is a full address or a domain. */
+  ruleType: BlockRuleType;
+  /** Lowercased address ("a@example.com") or bare domain ("example.com"). */
+  value: string;
+  /** When the rule was created, as an ISO 8601 string. */
+  createdAt: string;
+}
+
+/** Response from GET /api/block-rules (newest first). */
+export interface BlockRulesResponse {
+  rules: BlockRule[];
+}

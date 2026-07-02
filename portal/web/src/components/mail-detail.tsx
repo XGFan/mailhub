@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   ArrowLeft,
+  Ban,
   Download,
   ImageIcon,
   ImageOff,
@@ -10,6 +11,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ApiError, api } from '@/lib/api';
+import { blockAndToast } from '@/lib/block-actions';
+import { domainOf } from '@/lib/block-rules';
 import { useMailDetail } from '@/hooks/use-mail-detail';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,6 +24,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MailAttachments } from '@/components/mail-attachments';
 import { MailHtmlView } from '@/components/mail-html-view';
@@ -110,6 +119,7 @@ export function MailDetailPane({
 
   const allowRemote = showRemoteImages || remoteOverride;
   const display = data.fromName?.trim() || data.fromAddr;
+  const blockDomain = domainOf(data.fromAddr);
   const isFavorite = favoriteOverride ?? data.isFavorite;
   const when = data.date ?? data.receivedAt;
   const hasHtml = Boolean(data.htmlSanitized);
@@ -141,6 +151,30 @@ export function MailDetailPane({
                   <span className="hidden sm:inline">Download .eml</span>
                 </Button>
               </a>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={!data.fromAddr}
+                    aria-label="Block sender"
+                    title="Block sender"
+                    className="text-muted-foreground hover:text-destructive"
+                  >
+                    <Ban className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => void blockAndToast('address', data.fromAddr)}>
+                    <Ban className="size-4" /> Block sender
+                  </DropdownMenuItem>
+                  {blockDomain && (
+                    <DropdownMenuItem onSelect={() => void blockAndToast('domain', blockDomain)}>
+                      <Ban className="size-4" /> Block domain ({blockDomain})
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button
                 variant="ghost"
                 size="icon-sm"

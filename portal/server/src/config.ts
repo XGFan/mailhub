@@ -25,6 +25,12 @@ export interface Config {
   maxMailBytes: number;
   /** Delete mails + attachment files older than this many days. */
   retentionDays: number;
+  /**
+   * Accepted API keys for the optional `/api/*` gate. Empty (unset) means the
+   * gate is off and every request passes through — the backward-compatible
+   * default. Parsed from the comma-separated `API_KEYS` env var.
+   */
+  apiKeys: string[];
 }
 
 function num(name: string, fallback: number): number {
@@ -39,6 +45,16 @@ function str(name: string, fallback = ''): string {
   return raw === undefined || raw === '' ? fallback : raw;
 }
 
+/** Parse a comma-separated list, trimming each item and dropping empties. */
+function arr(name: string): string[] {
+  const raw = process.env[name];
+  if (raw === undefined) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
 export const config: Config = {
   port: num('PORT', 8787),
   databaseUrl: str('DATABASE_URL'),
@@ -50,4 +66,18 @@ export const config: Config = {
   attachmentDir: str('ATTACHMENT_DIR', './data/attachments'),
   maxMailBytes: num('MAX_MAIL_BYTES', 27_262_976),
   retentionDays: num('RETENTION_DAYS', 7),
+  apiKeys: arr('API_KEYS'),
 };
+
+// Guard against a silently-open misconfiguration: if API_KEYS carries something
+// (e.g. `API_KEYS=","`) but nothing usable parses out of it, the operator likely
+// intended to lock down /api/* yet it stays open. An unset/blank value is the
+// intentional "off" case and stays quiet.
+{
+  const rawApiKeys = process.env.API_KEYS;
+  if (rawApiKeys !== undefined && rawApiKeys.trim() !== '' && config.apiKeys.length === 0) {
+    console.warn(
+      '[config] API_KEYS is set but no valid keys parsed from it — the /api/* gate stays OPEN.',
+    );
+  }
+}

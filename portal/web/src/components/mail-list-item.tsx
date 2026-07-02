@@ -1,4 +1,4 @@
-import { Download, MoreVertical, Paperclip, ShieldAlert, Star, Trash2 } from 'lucide-react';
+import { Ban, Download, MoreVertical, Paperclip, ShieldAlert, Star, Trash2 } from 'lucide-react';
 import type { MailListItem } from '@mailhub/shared';
 import { Highlight } from '@/components/highlight';
 import {
@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { api } from '@/lib/api';
+import { blockAndToast } from '@/lib/block-actions';
 import { colorFromString, formatListDate, initials } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -158,6 +159,12 @@ export function MailListRow({
               <a href={api.rawUrl(item.id)} download>
                 <Download className="size-4" /> Download .eml
               </a>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!item.fromAddr}
+              onSelect={() => void blockAndToast('address', item.fromAddr)}
+            >
+              <Ban className="size-4" /> Block sender
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onSelect={() => onRequestDelete(item)}>

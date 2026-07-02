@@ -15,6 +15,13 @@
       "when": 1782963952377,
       "tag": "0001_lively_lady_ursula",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782987056649,
+      "tag": "0002_bouncy_thunderbolt_ross",
+      "breakpoints": true
     }
   ]
 }

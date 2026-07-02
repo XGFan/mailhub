@@ -3,7 +3,7 @@
 A single-user email system: a **Cloudflare Worker** ingests inbound mail via Email Routing and buffers it in R2, and a **self-hosted portal** (running on your k8s cluster) parses the mail into Postgres and serves a quality web UI to read and search your archive.
 
 > [!WARNING]
-> **This portal has NO authentication, by design.** Anyone who can reach it can read every message — including password-reset links, magic links, and OTP codes. It must ship **cluster-internal only** (`Service: ClusterIP`, no `Ingress`/`LoadBalancer`) behind a `NetworkPolicy`. Reach it via `kubectl port-forward`, a VPN/Tailscale, or a private Cloudflare Access tunnel. **Never add a public Ingress — that makes your entire mail archive world-readable.**
+> **This portal has NO authentication by default, by design.** Anyone who can reach it can read every message — including password-reset links, magic links, and OTP codes. It must ship **cluster-internal only** (`Service: ClusterIP`, no `Ingress`/`LoadBalancer`) behind a `NetworkPolicy`. Reach it via `kubectl port-forward`, a VPN/Tailscale, or a private Cloudflare Access tunnel. **Never add a public Ingress — that makes your entire mail archive world-readable.** Optionally, set `API_KEYS` to require an API key on all `/api/*` requests (for scripts/other clients) — see [`docs/API.md`](docs/API.md#authentication); this is an extra layer, not a substitute for network isolation.
 
 ## Architecture
 
@@ -26,7 +26,9 @@ Cloudflare Email Routing ──► Worker email() handler        [FREE, no parsi
      │                parse in isolated worker → upsert(ON CONFLICT r2_key) → DELETE
      ├─ REST API: /api/mails (search), /api/mails/:id, /api/mails/:id/raw,
      │            /api/mails/:id/favorite (star), DELETE /api/mails/:id,
-     │            /api/attachments/:id, /api/settings, /api/ingest/run
+     │            /api/attachments/:id, /api/settings, /api/ingest/run,
+     │            /api/block-rules (拒收 by address/domain, dropped at ingest)
+     │            [optional API-key gate on /api/* via API_KEYS]
      └─ React + Tailwind + shadcn/ui  (responsive two-pane client, collapsible
         sidebar, star/delete actions) 
         ← existing k8s Postgres (least-privilege role, schema "mailhub")
@@ -36,7 +38,7 @@ Cloudflare Email Routing ──► Worker email() handler        [FREE, no parsi
 
 | Feature | Decision |
 |---------|----------|
-| **Authentication** | None — portal runs cluster-internal only (no public Ingress) |
+| **Authentication** | None by default — portal runs cluster-internal only (no public Ingress); optional API-key gate on `/api/*` via `API_KEYS` for programmatic clients |
 | **Poll interval** | 30 seconds, plus manual "Fetch now" trigger |
 | **Remote images** | Blocked by default, client-side opt-in (never server-side fetch) |
 | **Mail retention** | Auto-purge after 7 days (configurable via `RETENTION_DAYS`); starred mail is retention-exempt |

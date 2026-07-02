@@ -5,21 +5,27 @@
  * production the built SPA is served from portal/web/dist with a guard so dev
  * (no dist) doesn't crash.
  */
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import { readFile, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import type {
+  BlockRule,
+  BlockRulesResponse,
+  BlockRuleType,
   FavoriteResponse,
   MailDetail,
   MailListItem,
   PortalSettings,
 } from '@mailhub/shared';
-import { count, eq, sql } from 'drizzle-orm';
+import { count, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { config } from '../config';
 import { db, pool } from '../db/client';
-import { attachments, mails, settings } from '../db/schema';
+import { attachments, blockRules, mails, settings } from '../db/schema';
+import { isValidBlockValue, normalizeBlockValue } from '../ingest-helpers';
 import { isIngestRunning, runIngestPass } from '../ingestor';
 import { headBucket } from '../r2';
 import {
@@ -53,6 +59,59 @@ app.use('*', async (c, next) => {
   c.header('X-Frame-Options', 'DENY');
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('Referrer-Policy', 'no-referrer');
+});
+
+// ---------------------------------------------------------------------------
+// Optional API-key gate — guards `/api/*` only (never /healthz, /readyz, or the
+// static SPA below). Backward compatible: with no keys configured the gate is a
+// no-op and behavior is identical to the no-auth default. `config.apiKeys` is
+// read at request time (not captured at registration) so tests can toggle it.
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract a presented key: prefer `X-API-Key`; otherwise consult `Authorization`
+ * ONLY when its scheme is exactly `Bearer` (case-insensitive, single space). A
+ * present non-Bearer `Authorization` (e.g. `Basic …`) must not short-circuit —
+ * it yields no key so the X-API-Key path stays authoritative. Empty/whitespace
+ * presented keys are rejected (treated as absent).
+ */
+function extractApiKey(c: { req: { header: (n: string) => string | undefined } }): string | null {
+  const headerKey = c.req.header('x-api-key');
+  if (headerKey !== undefined) {
+    const trimmed = headerKey.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  const auth = c.req.header('authorization');
+  if (auth !== undefined) {
+    const match = /^Bearer (.+)$/i.exec(auth);
+    if (match) {
+      const trimmed = match[1].trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+  }
+  return null;
+}
+
+/** Constant-time membership test of `candidate` against the configured keys. */
+function isValidApiKey(candidate: string, keys: readonly string[]): boolean {
+  // sha256 first so every comparison is over fixed 32-byte buffers (timingSafe
+  // won't throw on length mismatch, and length itself doesn't leak). Iterate all
+  // keys without early-return to keep the work uniform.
+  const candidateHash = createHash('sha256').update(candidate).digest();
+  let valid = false;
+  for (const key of keys) {
+    const keyHash = createHash('sha256').update(key).digest();
+    if (timingSafeEqual(candidateHash, keyHash)) valid = true;
+  }
+  return valid;
+}
+
+app.use('/api/*', async (c, next) => {
+  const keys = config.apiKeys;
+  if (keys.length === 0) return next();
+  const candidate = extractApiKey(c);
+  if (candidate && isValidApiKey(candidate, keys)) return next();
+  return c.json({ error: 'unauthorized', message: 'invalid or missing API key' }, 401);
 });
 
 // ---------------------------------------------------------------------------
@@ -428,6 +487,79 @@ app.put('/api/settings', async (c) => {
     .onConflictDoUpdate({ target: settings.id, set: { showRemoteImages } });
   const body: PortalSettings = { showRemoteImages };
   return c.json(body);
+});
+
+// ---------------------------------------------------------------------------
+// Block (拒收) rules — CRUD over the block_rules table. Matching mail is dropped
+// at ingest time (ingestor.ts); adding a rule never retroactively deletes mail.
+// ---------------------------------------------------------------------------
+type BlockRuleRow = { id: string; ruleType: string; value: string; createdAt: Date };
+
+function toBlockRule(r: BlockRuleRow): BlockRule {
+  return {
+    id: r.id,
+    ruleType: r.ruleType as BlockRuleType,
+    value: r.value,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+/** Postgres unique-violation (SQLSTATE 23505), possibly wrapped by drizzle. */
+function isUniqueViolation(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const e = err as { code?: unknown; cause?: { code?: unknown } };
+  return e.code === '23505' || e.cause?.code === '23505';
+}
+
+app.get('/api/block-rules', async (c) => {
+  const rows = await db.select().from(blockRules).orderBy(desc(blockRules.createdAt));
+  const body: BlockRulesResponse = { rules: rows.map(toBlockRule) };
+  return c.json(body);
+});
+
+app.post('/api/block-rules', async (c) => {
+  if (!mutationLimiter(clientKey(c))) return c.json({ error: 'rate_limited' }, 429);
+
+  let payload: unknown;
+  try {
+    payload = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid_json' }, 400);
+  }
+  if (typeof payload !== 'object' || payload === null) {
+    return c.json({ error: 'invalid_body' }, 400);
+  }
+  const { ruleType, value } = payload as { ruleType?: unknown; value?: unknown };
+  if ((ruleType !== 'address' && ruleType !== 'domain') || typeof value !== 'string') {
+    return c.json({ error: 'invalid_body' }, 400);
+  }
+
+  const normalized = normalizeBlockValue(value);
+  if (!isValidBlockValue(ruleType, normalized)) {
+    return c.json({ error: 'invalid_body', message: 'invalid rule value' }, 400);
+  }
+
+  try {
+    const inserted = await db
+      .insert(blockRules)
+      .values({ ruleType, value: normalized })
+      .returning();
+    return c.json(toBlockRule(inserted[0]), 201);
+  } catch (err) {
+    if (isUniqueViolation(err)) return c.json({ error: 'duplicate_rule' }, 409);
+    throw err;
+  }
+});
+
+app.delete('/api/block-rules/:id', async (c) => {
+  if (!mutationLimiter(clientKey(c))) return c.json({ error: 'rate_limited' }, 429);
+  const id = c.req.param('id');
+  const deleted = await db
+    .delete(blockRules)
+    .where(eq(blockRules.id, id))
+    .returning({ id: blockRules.id });
+  if (deleted.length === 0) return c.json({ error: 'not_found' }, 404);
+  return c.body(null, 204);
 });
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,38 @@
 # MailHub REST API Reference
 
-Base URL: `http://localhost:8787` (or your portal's internal address)
+Base URL: `http://localhost:8787` (or your portal's internal address, e.g. `https://mail.test4x.com`)
+
+## Authentication
+
+By default the portal has **no authentication** (it relies on network isolation —
+see [`SECURITY.md`](SECURITY.md)). Optionally, set the `API_KEYS` environment
+variable (comma-separated list of accepted keys) to require an API key on every
+`/api/*` request — useful for giving scripts and other clients programmatic
+access:
+
+```bash
+# generate a key
+openssl rand -hex 32
+# server side
+API_KEYS=<key1>,<key2>
+```
+
+Clients present the key via either header:
+
+```bash
+curl -H "X-API-Key: <key>" https://mail.test4x.com/api/mails
+curl -H "Authorization: Bearer <key>" https://mail.test4x.com/api/mails
+```
+
+- `X-API-Key` is checked first; `Authorization` is consulted only when its
+  scheme is `Bearer` (a forwarded `Authorization: Basic …` from an upstream
+  proxy does not interfere with a valid `X-API-Key`).
+- Missing/invalid key → **401** `{ "error": "unauthorized", ... }`.
+- `/healthz`, `/readyz`, and the static web UI are always exempt.
+- The web UI itself can store a key client-side (Settings → API key,
+  localStorage only) so it keeps working when `API_KEYS` is enforced.
+- When `API_KEYS` is unset (the default), all endpoints behave exactly as
+  before — no key is required.
 
 All responses carry these security headers:
 - `Content-Security-Policy: default-src 'self'; img-src 'self' data: https: http:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`
@@ -304,6 +336,65 @@ Update portal settings.
 
 ---
 
+## Block rules (拒收)
+
+Block rules drop matching inbound mail **at ingest time**: the raw object is
+deleted from R2 without being parsed into the archive (no DB row, no files).
+Rules are **not retroactive** — mail already archived stays until deleted or
+purged. Matching is against the header `From:` address (falling back to the
+SMTP envelope sender when the header is absent), case-insensitively:
+
+- `address` rule — exact full-address match (`alice@example.com`)
+- `domain` rule — the domain and all of its subdomains (`example.com` matches
+  `a@example.com` and `a@news.example.com`, but **not** `a@evilexample.com`)
+
+### GET `/api/block-rules`
+
+List all block rules, newest first.
+
+**Response:**
+```json
+{
+  "rules": [
+    {
+      "id": "770e8400-e29b-41d4-a716-446655440003",
+      "ruleType": "domain",
+      "value": "spam-sender.example",
+      "createdAt": "2026-07-02T08:00:00.000Z"
+    }
+  ]
+}
+```
+
+### POST `/api/block-rules`
+
+Create a block rule. The value is trimmed and lowercased server-side.
+
+**Request body:**
+```json
+{ "ruleType": "address", "value": "alice@example.com" }
+```
+
+**Response:** **201** with the created rule (same shape as the list items).
+
+**Errors:**
+- **400** — `ruleType` not in `{address, domain}`, or `value` malformed
+  (addresses must contain `@`; domains must be bare domains with at least one dot)
+- **409** — an identical rule already exists
+- **429** — rate limited (30 requests / 10 s per client)
+
+### DELETE `/api/block-rules/:id`
+
+Remove a block rule. Mail from that sender is accepted again afterwards.
+
+**Response:** **204 No Content** on success.
+
+**Errors:**
+- **404** — rule not found
+- **429** — rate limited
+
+---
+
 ## Error responses
 
 All errors follow this format:
@@ -321,6 +412,8 @@ Common error codes:
 - `invalid_json` — malformed JSON body (400)
 - `invalid_body` — wrong fields or types (400)
 - `rate_limited` — too many requests (429)
+- `unauthorized` — missing or invalid API key, only when `API_KEYS` is set (401)
+- `duplicate_rule` — an identical block rule already exists (409)
 
 ---
 

@@ -14,6 +14,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -117,3 +118,26 @@ export const settings = pgTable('settings', {
   id: integer('id').primaryKey().default(1),
   showRemoteImages: boolean('show_remote_images').notNull().default(false),
 });
+
+/**
+ * Block (拒收) rules. Mail whose sender matches a rule is dropped at ingest time
+ * (dropped, never archived — see ingestor.ts). `value` is stored lowercase; the
+ * `(rule_type, value)` unique index makes duplicate rules a 409 rather than a
+ * silent second row.
+ */
+export const blockRules = pgTable(
+  'block_rules',
+  {
+    /** Server-generated UUID primary key. */
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** `'address'` (full email) or `'domain'` (domain + all its subdomains). */
+    ruleType: text('rule_type').notNull(),
+    /** Lowercased address ("a@example.com") or bare domain ("example.com"). */
+    value: text('value').notNull(),
+    /** Row creation time (drives the newest-first list order). */
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [uniqueIndex('block_rules_type_value_idx').on(t.ruleType, t.value)],
+);

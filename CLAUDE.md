@@ -2,7 +2,7 @@
 
 ## Overview
 
-MailHub is a personal email archive system. A **Cloudflare Email Worker** ingests inbound mail via Email Routing and buffers raw MIME to R2. A **self-hosted Node/TS portal** (running on k3s) drains R2, parses mail with postal-mime into Postgres, and serves a React web UI to search and read your archive. **No authentication** — the portal runs cluster-internal only (ClusterIP + NetworkPolicy) behind tinyauth at the ingress.
+MailHub is a personal email archive system. A **Cloudflare Email Worker** ingests inbound mail via Email Routing and buffers raw MIME to R2. A **self-hosted Node/TS portal** (running on k3s) drains R2, parses mail with postal-mime into Postgres, and serves a React web UI to search and read your archive. **No authentication by default** — the portal runs cluster-internal only (ClusterIP + NetworkPolicy) behind tinyauth at the ingress; setting `API_KEYS` optionally gates `/api/*` behind an API key for programmatic clients.
 
 ## Monorepo Layout
 
@@ -57,6 +57,8 @@ cd e2e && npm test
 - **Sender display:** `fromAddr`/`fromName` are the header `From:` (human-meaningful). The SMTP envelope sender (`metadata.from`, an opaque bounce/return-path) is only a fallback when the header From is absent, and is stored separately as `envelope_from` (surfaced in the detail as Return-Path when it differs).
 - **Retention:** Auto-purge after 7 days (configurable via `RETENTION_DAYS` env var). **Starred mail (`is_favorite = true`) is retention-exempt** — it survives past the cutoff until unstarred or explicitly deleted.
 - **Attachment storage:** Uses PVC (`/data/attachments`) in k8s; size-capped at `MAX_MAIL_BYTES` (~26 MiB).
+- **Block rules (拒收):** DB-backed rules (`block_rules`, address or domain incl. subdomains) drop matching mail **at portal ingest** (R2 object deleted, nothing archived). Not retroactive; not enforced in the Worker (it has no DB access and must stay lightweight). Matching target is the header `From:` with envelope fallback — same semantics as sender display.
+- **API keys:** Optional `API_KEYS` env (comma-separated). When set, `/api/*` requires `X-API-Key` or `Authorization: Bearer` (timing-safe compare); `/healthz`/`/readyz`/static SPA stay open. When unset, zero behavior change. The web UI can store a key in localStorage (Settings) — it is never persisted server-side.
 
 ## Tailwind v4 (CSS-First)
 

@@ -10,10 +10,18 @@
 
 **Attack surface:** An attacker who can **read** your mail archive gains access to password-reset tokens, 2FA codes, and potentially compromises every account tied to your email address.
 
-**Your choice:** **No application authentication.** This means:
+**Your choice:** **No application authentication by default.** This means:
 - Anyone who can reach the portal can read all mail
 - Containment relies on **network-level isolation** (cluster-internal deployment, no public Ingress)
 - Every message in your archive is considered **sensitive**
+
+**Optional API-key gate:** setting the `API_KEYS` env var (comma-separated
+keys) requires a valid key (`X-API-Key` or `Authorization: Bearer`) on every
+`/api/*` request — see [`API.md`](API.md#authentication). This gives scripts
+and other clients an authenticated path, but it is an *additional* layer, not a
+replacement for network isolation: keys are compared timing-safely server-side,
+`/healthz`/`/readyz` and the static UI remain open, and with `API_KEYS` unset
+the portal behaves exactly as before.
 
 ---
 
@@ -273,7 +281,7 @@ Only the first insert succeeds; duplicates are silently skipped.
 
 ## Known limitations
 
-1. **No app-level auth:** Every message is readable to anyone with network access. Mitigated by cluster-internal deployment only.
+1. **No app-level auth by default:** Every message is readable to anyone with network access. Mitigated by cluster-internal deployment; optionally hardened with the `API_KEYS` gate on `/api/*` (the static UI shell remains served regardless).
 2. **Email header spoofing:** Headers like `From`, `To`, `Subject` can be spoofed by the sender. Mitigated by displaying the `Authentication-Results` header and using `toAddr` (envelope recipient) as the search anchor.
 3. **Email parsing bugs:** Complex MIME structures (especially older, malformed emails) may not parse correctly. Failed parses move to the `dead/` bucket (visible in R2 console, not surfaced in the UI).
 4. **PVC encryption at rest:** Attachments are stored on disk; the PVC is unencrypted by default. Mitigated by encrypting the PVC using your cluster's etcd encryption or a LUKS/dm-crypt layer.

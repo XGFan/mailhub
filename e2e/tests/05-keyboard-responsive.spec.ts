@@ -1,11 +1,13 @@
 /**
- * AC13 — keyboard navigation (↑/↓ move the active row, Enter opens it) and the
+ * AC13 — keyboard navigation (↑/↓ move the active row, Enter opens it,
+ * Delete/Backspace delete the active row via the confirm dialog) and the
  * responsive layout (two-pane ≥1024px; single-pane <1024px with a Back button).
- * Two mails are seeded so arrow movement is observable.
+ * Two mails are seeded so arrow movement is observable; the delete cases seed
+ * their own dedicated mails so the shared pair stays intact.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { seedMail } from '../helpers/portal';
-import { rows } from '../helpers/ui';
+import { rowByToken, rows, searchBox } from '../helpers/ui';
 
 test.beforeAll(async () => {
   await seedMail({ subjectText: 'Keyboard one' });
@@ -40,6 +42,50 @@ test('AC13: ↑/↓ move the active row and Enter opens it', async ({ page }) =>
   await expect(listbox).toHaveAttribute('aria-activedescendant', id0!);
   await page.keyboard.press('Enter');
   await expect(rows(page).nth(0)).toHaveAttribute('aria-selected', 'true');
+});
+
+/**
+ * Seed a fresh mail (it sorts newest → row 0 → the initial active row), focus
+ * the list, and press `key`. Returns the seeded token.
+ */
+async function seedAndPressOnActiveRow(page: Page, key: 'Delete' | 'Backspace'): Promise<string> {
+  const mail = await seedMail({ subjectText: `Keyboard ${key}` });
+  await page.goto('/');
+  const listbox = page.locator('[role="listbox"]');
+  await expect(rows(page).nth(0)).toContainText(mail.token); // newest-first ⇒ ours
+  await listbox.focus();
+  await page.keyboard.press(key);
+  return mail.token;
+}
+
+test('Delete key deletes the active row after confirmation', async ({ page }) => {
+  const token = await seedAndPressOnActiveRow(page, 'Delete');
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText('Delete this message?')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(rowByToken(page, token)).toHaveCount(0);
+});
+
+test('Backspace opens the same delete confirmation (and Cancel keeps the mail)', async ({
+  page,
+}) => {
+  const token = await seedAndPressOnActiveRow(page, 'Backspace');
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText('Delete this message?')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(rowByToken(page, token)).toBeVisible();
+});
+
+test('Backspace while typing in search never opens the delete dialog', async ({ page }) => {
+  await page.goto('/');
+  const box = searchBox(page);
+  await box.click();
+  await box.fill('abc');
+  await page.keyboard.press('Backspace');
+  await expect(box).toHaveValue('ab');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
 test('AC13: two-pane layout on desktop (≥1024px)', async ({ page }) => {

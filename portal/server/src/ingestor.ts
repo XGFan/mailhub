@@ -12,10 +12,12 @@ import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { config } from './config';
 import { db } from './db/client';
-import { attachments, mails } from './db/schema';
+import { attachments, blockRules, mails } from './db/schema';
 import {
+  type BlockRuleMatch,
   buildCidMap,
   buildSnippet,
+  isBlocked,
   isInlineAttachment,
   isSpamFromAuthResults,
   receivedAtFromKey,
@@ -54,10 +56,15 @@ export async function runIngestPass(): Promise<IngestPassResult> {
   isRunning = true;
   let processed = 0;
   try {
+    // Load the block rules once per pass (not per object) — the set is small and
+    // changes rarely, so a single SELECT amortizes across the whole backlog.
+    const rules: BlockRuleMatch[] = await db
+      .select({ ruleType: blockRules.ruleType, value: blockRules.value })
+      .from(blockRules);
     const objects = await listInbox();
     for (const obj of objects) {
       try {
-        if (await processObject(obj)) processed++;
+        if (await processObject(obj, rules)) processed++;
       } catch (err) {
         console.error(`[ingest] object failed, moving to dead/: ${obj.key}`, err);
         try {
@@ -74,7 +81,10 @@ export async function runIngestPass(): Promise<IngestPassResult> {
 }
 
 /** Process one inbox object. Returns true if a new mail row was inserted. */
-async function processObject(obj: InboxObject): Promise<boolean> {
+async function processObject(
+  obj: InboxObject,
+  rules: readonly BlockRuleMatch[],
+): Promise<boolean> {
   // 1. Idempotency: if this r2_key is already stored, just clean up the object.
   const existing = await db
     .select({ id: mails.id })
@@ -111,6 +121,17 @@ async function processObject(obj: InboxObject): Promise<boolean> {
   const toAddr = metadata.to ?? null;
   const fromAddr = parsed.fromAddr ?? metadata.from ?? null;
   const envelopeFrom = metadata.from ?? null;
+
+  // 5a. Block (拒收) short-circuit: if the sender matches a rule, drop the mail
+  //     entirely — no DB row, no attachment/raw files, and NOT moved to dead/
+  //     (a blocked sender is not a poison message). The R2 object is deleted so
+  //     it isn't reprocessed. Matches on the same address we display (fromAddr).
+  if (isBlocked(fromAddr, rules)) {
+    console.log(`[ingest] blocked ${obj.key} from ${fromAddr}`);
+    await deleteObject(obj.key);
+    return false;
+  }
+
   const receivedAt = receivedAtFromKey(obj.key);
   const isSpam = isSpamFromAuthResults(parsed.authResultsHeader);
   const snippet = buildSnippet(parsed.textBody, parsed.htmlRaw);

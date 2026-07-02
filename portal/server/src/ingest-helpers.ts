@@ -95,3 +95,86 @@ export function buildCidMap(attachments: ParsedAttachment[]): Record<string, str
   }
   return map;
 }
+
+// ---------------------------------------------------------------------------
+// Block (拒收) rules — pure matching + value validation, shared by the ingest
+// short-circuit and the block-rules route so both agree on semantics.
+// ---------------------------------------------------------------------------
+
+/** The minimal shape of a rule the matcher needs (a DB row is a superset). */
+export interface BlockRuleMatch {
+  ruleType: string;
+  value: string;
+}
+
+/** Lowercased address domain, or null if `addr` carries no `@`. */
+function addrDomain(addr: string): string | null {
+  const at = addr.lastIndexOf('@');
+  return at === -1 ? null : addr.slice(at + 1);
+}
+
+/**
+ * Is `addr` blocked by any rule? Case-insensitive. `address` rules match the
+ * full address exactly; `domain` rules match the address's domain exactly OR any
+ * subdomain of it (`foo.com` blocks `a@news.foo.com` but NOT `a@evilfoo.com`).
+ * A null/empty `addr`, or one without `@`, never matches a domain rule and never
+ * throws (values are already stored lowercase, but we lowercase defensively).
+ */
+export function isBlocked(
+  addr: string | null | undefined,
+  rules: readonly BlockRuleMatch[],
+): boolean {
+  if (!addr) return false;
+  const a = addr.trim().toLowerCase();
+  if (!a) return false;
+  const domain = addrDomain(a);
+  for (const rule of rules) {
+    const value = rule.value.toLowerCase();
+    if (rule.ruleType === 'address') {
+      if (a === value) return true;
+    } else if (rule.ruleType === 'domain') {
+      if (domain !== null && (domain === value || domain.endsWith(`.${value}`))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** Trim + lowercase a raw block-rule value into its canonical stored form. */
+export function normalizeBlockValue(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+/** A plausible bare domain: dotted, no `@`, sane charset, no leading/trailing/`..`. */
+function isPlausibleDomain(domain: string): boolean {
+  return (
+    domain.length > 0 &&
+    domain.includes('.') &&
+    /^[a-z0-9.-]+$/.test(domain) &&
+    !domain.startsWith('.') &&
+    !domain.endsWith('.') &&
+    !domain.includes('..')
+  );
+}
+
+/**
+ * Validate an already-normalized (trimmed + lowercased) block-rule value for its
+ * type. `address` needs a single `@` with a non-empty local part and a plausible
+ * domain; `domain` needs a bare plausible domain (no `@`). Rejects any internal
+ * whitespace. Returns false for an unknown rule type.
+ */
+export function isValidBlockValue(ruleType: string, value: string): boolean {
+  if (!value || /\s/.test(value)) return false;
+  if (ruleType === 'address') {
+    const at = value.indexOf('@');
+    if (at === -1 || at !== value.lastIndexOf('@')) return false;
+    const local = value.slice(0, at);
+    const domain = value.slice(at + 1);
+    return local.length > 0 && isPlausibleDomain(domain);
+  }
+  if (ruleType === 'domain') {
+    return !value.includes('@') && isPlausibleDomain(value);
+  }
+  return false;
+}

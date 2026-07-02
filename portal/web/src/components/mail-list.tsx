@@ -175,6 +175,15 @@ export function MailList(props: Props) {
           if (item) onToggleSelect(item.id);
         }
         break;
+      case 'Delete':
+      case 'Backspace': {
+        // Only fires while the listbox itself has focus, so typing in the
+        // search input is never intercepted. Opens the shared confirm dialog.
+        e.preventDefault();
+        if (selectionMode && selectedIds.size > 0) setPendingDelete(selectedItems);
+        else if (items[activeIndex]) setPendingDelete([items[activeIndex]]);
+        break;
+      }
       default:
         break;
     }
