@@ -102,11 +102,15 @@ async function processObject(obj: InboxObject): Promise<boolean> {
   // 4. Parse in isolation (timeout-bounded).
   const parsed = await parseInIsolation(body, PARSE_TIMEOUT_MS);
 
-  // 5. Derive fields. Envelope to/from from R2 custom metadata are authoritative
-  //    (a catch-all's delivered-to may differ from the header To); fall back to
-  //    parsed headers if the object predates metadata.
+  // 5. Derive fields. The envelope recipient (metadata.to) is authoritative for
+  //    display/search (a catch-all's delivered-to may differ from the header To).
+  //    For the SENDER we prefer the header `From:` — the human-meaningful address
+  //    (name + mailbox) — because the envelope sender (metadata.from) is often an
+  //    opaque bounce / return-path address (e.g. an SES `MAIL FROM`). The envelope
+  //    sender is kept separately for provenance and surfaced only when it differs.
   const toAddr = metadata.to ?? null;
-  const fromAddr = metadata.from ?? parsed.fromAddr;
+  const fromAddr = parsed.fromAddr ?? metadata.from ?? null;
+  const envelopeFrom = metadata.from ?? null;
   const receivedAt = receivedAtFromKey(obj.key);
   const isSpam = isSpamFromAuthResults(parsed.authResultsHeader);
   const snippet = buildSnippet(parsed.textBody, parsed.htmlRaw);
@@ -124,6 +128,9 @@ async function processObject(obj: InboxObject): Promise<boolean> {
       toAddr,
       fromAddr,
       fromName: parsed.fromName,
+      envelopeFrom,
+      replyToAddr: parsed.replyToAddr,
+      replyToName: parsed.replyToName,
       subject: parsed.subject,
       date: parsed.date ? new Date(parsed.date) : null,
       receivedAt,

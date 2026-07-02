@@ -21,6 +21,10 @@ export interface ParsedMail {
   subject: string | null;
   fromAddr: string | null;
   fromName: string | null;
+  /** Reply-To header address (first entry), or null. */
+  replyToAddr: string | null;
+  /** Reply-To header display name (first entry), or null. */
+  replyToName: string | null;
   textBody: string | null;
   htmlRaw: string | null;
   /** ISO 8601 string, or null if the Date header was absent/unparseable. */
@@ -67,11 +71,16 @@ export async function parseRaw(buf: Buffer): Promise<ParsedMail> {
     disposition: a.disposition ?? null,
   }));
 
+  // Reply-To is an array; the first mailbox is the meaningful reply target.
+  const replyTo = email.replyTo?.[0];
+
   return {
     messageId: email.messageId ?? null,
     subject: email.subject ?? null,
     fromAddr: email.from?.address ?? null,
     fromName: email.from?.name || null,
+    replyToAddr: replyTo?.address ?? null,
+    replyToName: replyTo?.name || null,
     textBody: email.text ?? null,
     htmlRaw: email.html ?? null,
     date: normalizeDate(email.date),

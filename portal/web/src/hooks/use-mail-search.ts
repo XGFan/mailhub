@@ -37,7 +37,15 @@ export function useMailSearch(params: SearchParams): MailSearchState {
       });
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.q, params.field, params.page, params.pageSize, params.includeSpam, reloadKey]);
+  }, [
+    params.q,
+    params.field,
+    params.page,
+    params.pageSize,
+    params.includeSpam,
+    params.favorite,
+    reloadKey,
+  ]);
 
   return {
     data,

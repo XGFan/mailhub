@@ -25,6 +25,7 @@ interface Props {
   onActiveIndexChange: (index: number) => void;
   onPageChange: (page: number) => void;
   onIncludeSpamChange: (value: boolean) => void;
+  onToggleFavorite: (id: string, next: boolean) => void;
 }
 
 export function MailList(props: Props) {
@@ -46,6 +47,7 @@ export function MailList(props: Props) {
     onActiveIndexChange,
     onPageChange,
     onIncludeSpamChange,
+    onToggleFavorite,
   } = props;
 
   const listRef = useRef<HTMLDivElement>(null);
@@ -142,6 +144,7 @@ export function MailList(props: Props) {
                     isActive={index === activeIndex}
                     query={query}
                     onClick={() => onOpen(index)}
+                    onToggleFavorite={onToggleFavorite}
                   />
                 </div>
               ))}

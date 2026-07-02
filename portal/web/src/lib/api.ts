@@ -1,4 +1,5 @@
 import type {
+  FavoriteResponse,
   IngestRunResponse,
   MailDetail,
   PortalSettings,
@@ -46,6 +47,7 @@ export interface SearchParams {
   page?: number;
   pageSize?: number;
   includeSpam?: boolean;
+  favorite?: boolean;
 }
 
 export const api = {
@@ -56,12 +58,26 @@ export const api = {
     if (params.page) qs.set('page', String(params.page));
     if (params.pageSize) qs.set('pageSize', String(params.pageSize));
     if (params.includeSpam) qs.set('includeSpam', 'true');
+    if (params.favorite) qs.set('favorite', 'true');
     const query = qs.toString();
     return request<SearchResponse>(`/mails${query ? `?${query}` : ''}`, { signal });
   },
 
   getMail(id: string, signal?: AbortSignal): Promise<MailDetail> {
     return request<MailDetail>(`/mails/${encodeURIComponent(id)}`, { signal });
+  },
+
+  /** Star / unstar a mail. Starred mail is exempt from the retention purge. */
+  setFavorite(id: string, favorite: boolean): Promise<FavoriteResponse> {
+    return request<FavoriteResponse>(`/mails/${encodeURIComponent(id)}/favorite`, {
+      method: 'PUT',
+      body: JSON.stringify({ favorite }),
+    });
+  },
+
+  /** Permanently delete a mail (row + attachment files + raw .eml). */
+  deleteMail(id: string): Promise<void> {
+    return request<void>(`/mails/${encodeURIComponent(id)}`, { method: 'DELETE' });
   },
 
   runIngest(): Promise<IngestRunResponse> {

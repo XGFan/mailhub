@@ -32,10 +32,23 @@ export const mails = pgTable(
     messageId: text('message_id'),
     /** Envelope recipient — what the address actually received (search anchor). */
     toAddr: text('to_addr'),
-    /** Envelope sender address. */
+    /**
+     * Sender address for display — the header `From:` address (human-meaningful),
+     * falling back to the envelope sender only when the header is absent.
+     */
     fromAddr: text('from_addr'),
     /** Display name parsed from the From header. */
     fromName: text('from_name'),
+    /**
+     * SMTP envelope sender (the `MAIL FROM` / Return-Path). Kept for provenance
+     * (e.g. an SES bounce address) and surfaced only when it differs from the
+     * header From.
+     */
+    envelopeFrom: text('envelope_from'),
+    /** Reply-To address parsed from the header, if present. */
+    replyToAddr: text('reply_to_addr'),
+    /** Display name parsed from the Reply-To header. */
+    replyToName: text('reply_to_name'),
     /** RFC2047-decoded subject. */
     subject: text('subject'),
     /** Parsed header date (nullable / spoofable). */
@@ -54,6 +67,11 @@ export const mails = pgTable(
     hasAttachments: boolean('has_attachments').notNull().default(false),
     /** SPF/DKIM/DMARC-derived spam flag (junk filtering, M7). */
     isSpam: boolean('is_spam').notNull().default(false),
+    /**
+     * User-starred flag. Starred mail is exempt from retention auto-purge, so it
+     * survives past RETENTION_DAYS until unstarred or explicitly deleted.
+     */
+    isFavorite: boolean('is_favorite').notNull().default(false),
     /** Raw Authentication-Results header, if present. */
     authResults: text('auth_results'),
     /** Absolute path to the archived raw .eml on the attachment PVC. */
@@ -63,7 +81,11 @@ export const mails = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (t) => [index('mails_message_id_idx').on(t.messageId)],
+  (t) => [
+    index('mails_message_id_idx').on(t.messageId),
+    // Backs the "starred only" filter and the retention purge's favorite skip.
+    index('mails_is_favorite_idx').on(t.isFavorite),
+  ],
 );
 
 export const attachments = pgTable('attachments', {

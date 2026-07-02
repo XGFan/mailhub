@@ -25,6 +25,12 @@ export interface NormalizedSearch {
   page: number;
   pageSize: number;
   includeSpam: boolean;
+  favorite: boolean;
+}
+
+/** Parse a loosely-typed truthy query flag ("1"/"true"/true/1). */
+function toBool(value: unknown): boolean {
+  return value === true || value === 1 || value === '1' || value === 'true';
 }
 
 function toInt(value: unknown, fallback: number): number {
@@ -43,6 +49,7 @@ export function normalizeSearchParams(raw: {
   page?: string | number;
   pageSize?: string | number;
   includeSpam?: string | number | boolean;
+  favorite?: string | number | boolean;
 }): NormalizedSearch {
   const field = (raw.field ?? 'all') as SearchField;
   if (!VALID_FIELDS.includes(field)) {
@@ -52,13 +59,14 @@ export function normalizeSearchParams(raw: {
   const page = Math.max(1, toInt(raw.page, 1));
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, toInt(raw.pageSize, DEFAULT_PAGE_SIZE)));
 
-  const includeSpam =
-    raw.includeSpam === true ||
-    raw.includeSpam === 1 ||
-    raw.includeSpam === '1' ||
-    raw.includeSpam === 'true';
-
-  return { q: (raw.q ?? '').trim(), field, page, pageSize, includeSpam };
+  return {
+    q: (raw.q ?? '').trim(),
+    field,
+    page,
+    pageSize,
+    includeSpam: toBool(raw.includeSpam),
+    favorite: toBool(raw.favorite),
+  };
 }
 
 /**
@@ -74,6 +82,7 @@ export function buildWhereClause(p: NormalizedSearch): SQL | undefined {
   const conds: SQL[] = [];
 
   if (!p.includeSpam) conds.push(eq(mails.isSpam, false));
+  if (p.favorite) conds.push(eq(mails.isFavorite, true));
 
   if (p.q) {
     const pattern = `%${escapeLike(p.q)}%`;

@@ -1,4 +1,4 @@
-import { Paperclip, ShieldAlert } from 'lucide-react';
+import { Paperclip, ShieldAlert, Star } from 'lucide-react';
 import type { MailListItem } from '@mailhub/shared';
 import { Highlight } from '@/components/highlight';
 import { colorFromString, formatListDate, initials } from '@/lib/format';
@@ -11,23 +11,34 @@ interface Props {
   isActive: boolean;
   query: string;
   onClick: () => void;
+  onToggleFavorite: (id: string, next: boolean) => void;
 }
 
-/** A single row in the message list. Rendered as a `role="option"` button. */
-export function MailListRow({ item, optionId, isSelected, isActive, query, onClick }: Props) {
+/**
+ * A single row in the message list. Rendered as a `role="option"` element (a div,
+ * not a button, so the star toggle can nest without invalid nested interactives).
+ */
+export function MailListRow({
+  item,
+  optionId,
+  isSelected,
+  isActive,
+  query,
+  onClick,
+  onToggleFavorite,
+}: Props) {
   const display = item.fromName?.trim() || item.fromAddr;
   const when = item.date ?? item.receivedAt;
 
   return (
-    <button
-      type="button"
+    <div
       id={optionId}
       role="option"
       aria-selected={isSelected}
       tabIndex={-1}
       onClick={onClick}
       className={cn(
-        'flex w-full gap-3 border-l-2 px-4 py-3 text-left transition-colors focus:outline-none',
+        'flex w-full cursor-pointer gap-3 border-l-2 px-4 py-3 text-left transition-colors focus:outline-none',
         isSelected
           ? 'border-l-primary bg-accent'
           : 'border-l-transparent hover:bg-muted/60',
@@ -74,6 +85,25 @@ export function MailListRow({ item, optionId, isSelected, isActive, query, onCli
           </span>
         </span>
       </span>
-    </button>
+
+      <button
+        type="button"
+        aria-label={item.isFavorite ? 'Unstar' : 'Star'}
+        aria-pressed={item.isFavorite}
+        title={item.isFavorite ? 'Remove from Starred' : 'Add to Starred'}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleFavorite(item.id, !item.isFavorite);
+        }}
+        className={cn(
+          'mt-0.5 shrink-0 self-start rounded p-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          item.isFavorite
+            ? 'text-amber-500'
+            : 'text-muted-foreground/40 hover:text-amber-500',
+        )}
+      >
+        <Star className={cn('size-4', item.isFavorite && 'fill-current')} aria-hidden />
+      </button>
+    </div>
   );
 }

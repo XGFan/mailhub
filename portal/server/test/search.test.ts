@@ -59,6 +59,13 @@ describe('normalizeSearchParams', () => {
     expect(normalizeSearchParams({ includeSpam: 'true' }).includeSpam).toBe(true);
     expect(normalizeSearchParams({}).includeSpam).toBe(false);
   });
+
+  it('parses favorite truthy variants', () => {
+    expect(normalizeSearchParams({ favorite: '1' }).favorite).toBe(true);
+    expect(normalizeSearchParams({ favorite: 'true' }).favorite).toBe(true);
+    expect(normalizeSearchParams({ favorite: true }).favorite).toBe(true);
+    expect(normalizeSearchParams({}).favorite).toBe(false);
+  });
 });
 
 describe('escapeLike', () => {
@@ -99,6 +106,21 @@ describe('buildWhereClause SQL', () => {
       normalizeSearchParams({ q: 'x', field: 'all', includeSpam: '1' }),
     ).sql.toLowerCase();
     expect(included).not.toContain('is_spam');
+  });
+
+  it('restricts to starred mail only when favorite=true', () => {
+    const off = toSQL(normalizeSearchParams({})).sql.toLowerCase();
+    expect(off).not.toContain('is_favorite');
+    const on = toSQL(normalizeSearchParams({ favorite: '1' })).sql.toLowerCase();
+    expect(on).toContain('is_favorite');
+  });
+
+  it('combines the favorite filter with a text query (AND)', () => {
+    const { sql } = toSQL(normalizeSearchParams({ q: 'foo', field: 'subject', favorite: '1' }));
+    const lower = sql.toLowerCase();
+    expect(lower).toContain('is_favorite');
+    expect(lower).toContain('ilike');
+    expect(lower).toContain(' and ');
   });
 
   it('orders by date DESC NULLS LAST then received_at DESC', () => {

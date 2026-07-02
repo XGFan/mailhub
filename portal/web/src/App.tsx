@@ -7,29 +7,42 @@ import { useIsMobile } from '@/hooks/use-media-query';
 import { useMailSearch } from '@/hooks/use-mail-search';
 import { useSettings } from '@/hooks/use-settings';
 import { AppHeader } from '@/components/app-header';
+import { AppSidebar, type MailFolder } from '@/components/app-sidebar';
 import { MailDetailPane } from '@/components/mail-detail';
 import { MailList } from '@/components/mail-list';
 import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 50;
+const SIDEBAR_KEY = 'mailhub:sidebar-collapsed';
 
 export default function App() {
   const [rawQuery, setRawQuery] = useState('');
   const [field, setField] = useState<SearchField>('all');
   const [includeSpam, setIncludeSpam] = useState(false);
+  const [folder, setFolder] = useState<MailFolder>('all');
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [mobileView, setMobileView] = useState<'list' | 'detail'>('list');
   const [isFetching, setIsFetching] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(
+    () => globalThis.localStorage?.getItem(SIDEBAR_KEY) === '1',
+  );
 
   const isMobile = useIsMobile();
   const debouncedQuery = useDebouncedValue(rawQuery.trim(), 300);
   const { settings, setShowRemoteImages } = useSettings();
 
   const params = useMemo(
-    () => ({ q: debouncedQuery || undefined, field, page, pageSize: PAGE_SIZE, includeSpam }),
-    [debouncedQuery, field, page, includeSpam],
+    () => ({
+      q: debouncedQuery || undefined,
+      field,
+      page,
+      pageSize: PAGE_SIZE,
+      includeSpam,
+      favorite: folder === 'favorites' || undefined,
+    }),
+    [debouncedQuery, field, page, includeSpam, folder],
   );
 
   const { data, isLoading, isError, errorMessage, refetch } = useMailSearch(params);
@@ -39,7 +52,7 @@ export default function App() {
   // Reset to the first page whenever the query or filters change.
   useEffect(() => {
     setPage(1);
-  }, [debouncedQuery, field, includeSpam]);
+  }, [debouncedQuery, field, includeSpam, folder]);
 
   // Clamp the keyboard-active row to the current result set.
   useEffect(() => {
@@ -77,6 +90,38 @@ export default function App() {
     }
   }
 
+  function toggleSidebar() {
+    setSidebarCollapsed((c) => {
+      const next = !c;
+      try {
+        globalThis.localStorage?.setItem(SIDEBAR_KEY, next ? '1' : '0');
+      } catch {
+        // Ignore storage failures (private mode / disabled) — state still applies.
+      }
+      return next;
+    });
+  }
+
+  // Star toggle from the list row. The detail pane toggles optimistically on its
+  // own; here we just persist and resync the list (so unstarred mail leaves the
+  // Starred view).
+  async function handleToggleFavorite(id: string, next: boolean) {
+    try {
+      await api.setFavorite(id, next);
+      refetch();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Failed to update star');
+    }
+  }
+
+  function handleDeleted(id: string) {
+    if (selectedId === id) {
+      setSelectedId(null);
+      setMobileView('list');
+    }
+    refetch();
+  }
+
   const showList = !isMobile || mobileView === 'list';
   const showDetail = !isMobile || mobileView === 'detail';
 
@@ -93,7 +138,16 @@ export default function App() {
         onShowRemoteImagesChange={setShowRemoteImages}
       />
 
-      <main className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1">
+        <AppSidebar
+          folder={folder}
+          onFolderChange={setFolder}
+          collapsed={sidebarCollapsed}
+          onToggleCollapsed={toggleSidebar}
+          isMobile={isMobile}
+        />
+
+        <main className="flex min-h-0 flex-1">
         <section
           aria-label="Message list"
           className={cn(
@@ -120,6 +174,7 @@ export default function App() {
             onActiveIndexChange={setActiveIndex}
             onPageChange={setPage}
             onIncludeSpamChange={setIncludeSpam}
+            onToggleFavorite={handleToggleFavorite}
           />
         </section>
 
@@ -133,10 +188,13 @@ export default function App() {
               showRemoteImages={settings.showRemoteImages}
               isMobile={isMobile}
               onBack={() => setMobileView('list')}
+              onFavoriteChanged={refetch}
+              onDeleted={handleDeleted}
             />
           </div>
         </section>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

@@ -24,9 +24,11 @@ Cloudflare Email Routing ──► Worker email() handler        [FREE, no parsi
    k8s Portal (Node/TS, SINGLETON ingestor + API) ─┘
      ├─ ingestor: poll R2 every 30s, paginated LIST → GET → size-cap → 
      │                parse in isolated worker → upsert(ON CONFLICT r2_key) → DELETE
-     ├─ REST API: /api/mails (search), /api/mails/:id, /api/mails/:id/raw, 
+     ├─ REST API: /api/mails (search), /api/mails/:id, /api/mails/:id/raw,
+     │            /api/mails/:id/favorite (star), DELETE /api/mails/:id,
      │            /api/attachments/:id, /api/settings, /api/ingest/run
-     └─ React + Tailwind + shadcn/ui  (responsive two-pane mail client) 
+     └─ React + Tailwind + shadcn/ui  (responsive two-pane client, collapsible
+        sidebar, star/delete actions) 
         ← existing k8s Postgres (least-privilege role, schema "mailhub")
 ```
 
@@ -37,7 +39,7 @@ Cloudflare Email Routing ──► Worker email() handler        [FREE, no parsi
 | **Authentication** | None — portal runs cluster-internal only (no public Ingress) |
 | **Poll interval** | 30 seconds, plus manual "Fetch now" trigger |
 | **Remote images** | Blocked by default, client-side opt-in (never server-side fetch) |
-| **Mail retention** | Auto-purge after 7 days (configurable via `RETENTION_DAYS`) |
+| **Mail retention** | Auto-purge after 7 days (configurable via `RETENTION_DAYS`); starred mail is retention-exempt |
 | **Email Routing** | Dashboard-configured; receiving is free on Cloudflare's free tier |
 
 ## Repository layout

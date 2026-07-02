@@ -14,6 +14,7 @@ export interface MailListItem {
   receivedAt: string;
   hasAttachments: boolean;
   isSpam: boolean;
+  isFavorite: boolean;
 }
 
 export interface Attachment {
@@ -29,6 +30,9 @@ export interface MailDetail extends MailListItem {
   textBody: string | null;
   attachments: Attachment[];
   authResults?: string;
+  envelopeFrom?: string;
+  replyToAddr?: string;
+  replyToName?: string;
 }
 
 export interface SearchResponse {

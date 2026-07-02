@@ -5,12 +5,21 @@
  * k8s object.
  */
 import { unlink } from 'node:fs/promises';
-import { inArray, lt } from 'drizzle-orm';
+import { and, eq, inArray, lt, type SQL } from 'drizzle-orm';
 import { config } from './config';
 import { db } from './db/client';
 import { attachments, mails } from './db/schema';
 
 const PURGE_INTERVAL_MS = 60 * 60_000;
+
+/**
+ * The selector for mail eligible for retention deletion: older than the cutoff
+ * AND not starred. Starred mail is retention-exempt. Exported so the exemption
+ * is unit-testable via `.toSQL()` without a live database.
+ */
+export function expiredWhere(cutoff: Date): SQL {
+  return and(lt(mails.receivedAt, cutoff), eq(mails.isFavorite, false))!;
+}
 
 /** Result of one purge run. */
 export interface PurgeResult {
@@ -34,10 +43,12 @@ async function safeUnlink(p: string | null): Promise<boolean> {
 export async function purgeExpired(): Promise<PurgeResult> {
   const cutoff = new Date(Date.now() - config.retentionDays * 86_400_000);
 
+  // Starred mail is retention-exempt: it survives past the cutoff until the user
+  // unstars or explicitly deletes it.
   const expired = await db
     .select({ id: mails.id, rawPath: mails.rawPath })
     .from(mails)
-    .where(lt(mails.receivedAt, cutoff));
+    .where(expiredWhere(cutoff));
   if (expired.length === 0) return { deletedMails: 0, deletedFiles: 0 };
 
   const ids = expired.map((m) => m.id);

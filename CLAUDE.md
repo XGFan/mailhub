@@ -54,7 +54,8 @@ cd e2e && npm test
 - **Parsing isolation:** Portal runs postal-mime in a worker_thread (isolated subprocess) to sandbox untrusted MIME.
 - **HTML safety:** Mail HTML is rendered in a sandboxed iframe with CSP blocking remote images.
 - **Remote images:** Blocked by default (client-side opt-in only, never server-side fetch to avoid SSRF).
-- **Retention:** Auto-purge after 7 days (configurable via `RETENTION_DAYS` env var).
+- **Sender display:** `fromAddr`/`fromName` are the header `From:` (human-meaningful). The SMTP envelope sender (`metadata.from`, an opaque bounce/return-path) is only a fallback when the header From is absent, and is stored separately as `envelope_from` (surfaced in the detail as Return-Path when it differs).
+- **Retention:** Auto-purge after 7 days (configurable via `RETENTION_DAYS` env var). **Starred mail (`is_favorite = true`) is retention-exempt** — it survives past the cutoff until unstarred or explicitly deleted.
 - **Attachment storage:** Uses PVC (`/data/attachments`) in k8s; size-capped at `MAX_MAIL_BYTES` (~26 MiB).
 
 ## Tailwind v4 (CSS-First)

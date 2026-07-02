@@ -22,6 +22,8 @@ never interferes with the monorepo's pnpm install.
 | `03-search` | AC5, AC12 | search by recipient / sender / subject (case-insensitive); no-results state |
 | `04-attachments` | AC7 | `/api/attachments/:id` + raw `.eml` are forced downloads (`Content-Disposition: attachment`, `application/octet-stream`, `nosniff`) |
 | `05-keyboard-responsive` | AC13 | ↑/↓ + Enter navigation; two-pane ≥1024px vs single-pane <1024px with Back |
+| `06-favorites-delete` | — | star/unstar from the reading pane; the Starred folder filter; delete via the confirm dialog |
+| `07-sender-sidebar` | — | header `From:` (not the envelope bounce address) is displayed, envelope surfaced as Return-Path; sidebar collapse/expand |
 
 ## Latest result
 

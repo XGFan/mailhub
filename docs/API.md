@@ -52,6 +52,7 @@ Search or list mail with pagination and optional filtering.
 | `page` | integer | 1 | 1-based page number |
 | `pageSize` | integer | 50 | Items per page; bounded to max 100 |
 | `includeSpam` | boolean | false | Include messages marked as spam (via SPF/DKIM/DMARC check) |
+| `favorite` | boolean | false | Restrict results to starred mail only |
 
 **Response:**
 ```json
@@ -67,7 +68,8 @@ Search or list mail with pagination and optional filtering.
       "date": "2026-07-01T14:30:00.000Z",
       "receivedAt": "2026-07-01T14:32:15.123Z",
       "hasAttachments": true,
-      "isSpam": false
+      "isSpam": false,
+      "isFavorite": false
     }
   ],
   "page": 1,
@@ -80,6 +82,8 @@ Search or list mail with pagination and optional filtering.
 - Results ordered by `date DESC` (parsed header date), falling back to `receivedAt DESC` if header date is missing
 - `date` may be null (unparseable or absent); `receivedAt` is always present
 - `toAddr` is the **envelope recipient** (what the address actually received) — authoritative for searches
+- `fromAddr` / `fromName` are the **header `From:`** (the human-meaningful sender). The SMTP envelope sender (an opaque bounce / return-path address) is used only as a fallback when the header From is absent, and is surfaced separately in the detail as `envelopeFrom`
+- `isFavorite` — whether the mail is starred (starred mail is exempt from the retention auto-purge)
 - `snippet` is the first ~140 characters of the text body, HTML-stripped and whitespace-collapsed
 - Rate limited to 30 requests per 10 seconds per client
 
@@ -108,9 +112,13 @@ Fetch full mail detail: headers, sanitized HTML, text body, and all attachments.
   "receivedAt": "2026-07-01T14:32:15.123Z",
   "hasAttachments": true,
   "isSpam": false,
+  "isFavorite": false,
   "htmlSanitized": "<p>Hi, can we confirm the meeting tomorrow? I'd like to…</p>",
   "textBody": "Hi, can we confirm the meeting tomorrow? I'd like to…",
   "authResults": "spf=pass smtp.mfrom=alice@example.com dkim=pass dmarc=pass",
+  "envelopeFrom": "0100019f-bounce@send.example.com",
+  "replyToAddr": "support@example.com",
+  "replyToName": "Alice Support",
   "attachments": [
     {
       "id": "660e8400-e29b-41d4-a716-446655440001",
@@ -135,6 +143,8 @@ Fetch full mail detail: headers, sanitized HTML, text body, and all attachments.
 - `textBody` is the plain-text alternative (or null)
 - `date` may be null
 - `authResults` contains the raw `Authentication-Results` header (SPF/DKIM/DMARC) if present
+- `envelopeFrom` is the SMTP envelope sender (the `MAIL FROM` / return-path); included **only when it differs** from `fromAddr` (the header From). Shown in the UI as the Return-Path
+- `replyToAddr` / `replyToName` are the parsed `Reply-To` header; included **only when present and distinct** from `fromAddr`
 - Inline attachments (`isInline: true`) use `content-id` values to link into the HTML body as `cid:` URIs (converted to `data:` by the frontend)
 
 **Errors:**
@@ -157,6 +167,44 @@ X-Content-Type-Options: nosniff
 
 **Errors:**
 - **404** — mail or raw file not found
+
+---
+
+## Mail actions
+
+### PUT `/api/mails/:id/favorite`
+
+Star or unstar a mail. Starred mail is **exempt from the retention auto-purge** —
+it survives past `RETENTION_DAYS` until unstarred or explicitly deleted.
+
+**Request body:**
+```json
+{ "favorite": true }
+```
+
+**Response:**
+```json
+{ "id": "550e8400-e29b-41d4-a716-446655440000", "isFavorite": true }
+```
+
+**Errors:**
+- **400** — invalid JSON, or `favorite` missing / not a boolean
+- **404** — mail not found
+- **429** — rate limited (30 requests / 10 s per client)
+
+---
+
+### DELETE `/api/mails/:id`
+
+Permanently delete a mail: the row (attachment rows cascade via the FK), the
+attachment files, and the archived raw `.eml` are all removed from disk. This is
+irreversible.
+
+**Response:** **204 No Content** on success.
+
+**Errors:**
+- **404** — mail not found
+- **429** — rate limited (30 requests / 10 s per client)
 
 ---
 

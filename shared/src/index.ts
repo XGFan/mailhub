@@ -35,6 +35,8 @@ export interface MailListItem {
   hasAttachments: boolean;
   /** Whether SPF/DKIM/DMARC results marked this as likely spam/junk. */
   isSpam: boolean;
+  /** Whether the user has starred this mail (starred mail is retention-exempt). */
+  isFavorite: boolean;
 }
 
 /** Metadata for a single parsed attachment (bytes served separately). */
@@ -61,6 +63,16 @@ export interface MailDetail extends MailListItem {
   attachments: Attachment[];
   /** Raw Authentication-Results header, if present (SPF/DKIM/DMARC). */
   authResults?: string;
+  /**
+   * SMTP envelope sender (the `MAIL FROM` / Return-Path, e.g. an SES bounce
+   * address). Surfaced only when it differs from the header From so the reader
+   * can see where the mail actually originated. Display prefers `fromAddr`.
+   */
+  envelopeFrom?: string;
+  /** Reply-To address parsed from the header, if present and distinct. */
+  replyToAddr?: string;
+  /** Optional display name parsed from the Reply-To header. */
+  replyToName?: string;
 }
 
 /** Which column(s) a search query targets. `all` ORs to/from/subject. */
@@ -78,6 +90,8 @@ export interface SearchQuery {
   pageSize?: number;
   /** Include spam/junk in results; defaults to false. */
   includeSpam?: boolean;
+  /** Restrict results to starred mail only; defaults to false. */
+  favorite?: boolean;
 }
 
 /** Paginated response from GET /api/mails. */
@@ -97,6 +111,12 @@ export interface IngestRunResponse {
   alreadyRunning: boolean;
   /** Number of messages processed, when known. */
   processed?: number;
+}
+
+/** Response from PUT /api/mails/:id/favorite (the star toggle). */
+export interface FavoriteResponse {
+  id: string;
+  isFavorite: boolean;
 }
 
 /** Client-configurable portal settings. */

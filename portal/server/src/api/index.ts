@@ -6,11 +6,16 @@
  * (no dist) doesn't crash.
  */
 import { existsSync, statSync } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import type { MailDetail, MailListItem, PortalSettings } from '@mailhub/shared';
+import type {
+  FavoriteResponse,
+  MailDetail,
+  MailListItem,
+  PortalSettings,
+} from '@mailhub/shared';
 import { count, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { db, pool } from '../db/client';
@@ -72,6 +77,8 @@ function createRateLimiter(capacity: number, refillPerSec: number) {
 
 const searchLimiter = createRateLimiter(30, 10);
 const ingestLimiter = createRateLimiter(3, 0.2);
+// Star toggles + deletes are single-user actions; keep a generous bucket.
+const mutationLimiter = createRateLimiter(30, 10);
 
 function clientKey(c: { req: { header: (n: string) => string | undefined } }): string {
   return c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
@@ -114,6 +121,7 @@ const LIST_COLUMNS = {
   receivedAt: mails.receivedAt,
   hasAttachments: mails.hasAttachments,
   isSpam: mails.isSpam,
+  isFavorite: mails.isFavorite,
 };
 
 type ListRow = {
@@ -127,6 +135,7 @@ type ListRow = {
   receivedAt: Date;
   hasAttachments: boolean;
   isSpam: boolean;
+  isFavorite: boolean;
 };
 
 function toListItem(r: ListRow): MailListItem {
@@ -141,6 +150,7 @@ function toListItem(r: ListRow): MailListItem {
     receivedAt: r.receivedAt.toISOString(),
     hasAttachments: r.hasAttachments,
     isSpam: r.isSpam,
+    isFavorite: r.isFavorite,
   };
 }
 
@@ -161,6 +171,7 @@ app.get('/api/mails', async (c) => {
       page: q.page,
       pageSize: q.pageSize,
       includeSpam: q.includeSpam,
+      favorite: q.favorite,
     });
   } catch (err) {
     if (err instanceof SearchValidationError) {
@@ -210,11 +221,23 @@ app.get('/api/mails/:id', async (c) => {
     .from(attachments)
     .where(eq(attachments.mailId, id));
 
+  // Surface the envelope sender only when it differs from the header From, and
+  // Reply-To only when present and distinct from From — the reader shouldn't be
+  // shown redundant copies of the same address. Compare case-insensitively so a
+  // mere domain/case difference isn't treated as a distinct address.
+  const sameAsFrom = (addr: string | null) =>
+    !!addr && !!m.fromAddr && addr.toLowerCase() === m.fromAddr.toLowerCase();
+  const envelopeFrom = m.envelopeFrom && !sameAsFrom(m.envelopeFrom) ? m.envelopeFrom : undefined;
+  const replyToAddr = m.replyToAddr && !sameAsFrom(m.replyToAddr) ? m.replyToAddr : undefined;
+
   const detail: MailDetail = {
     ...toListItem(m),
     htmlSanitized: m.htmlSanitized ?? null,
     textBody: m.textBody ?? null,
     authResults: m.authResults ?? undefined,
+    envelopeFrom,
+    replyToAddr,
+    replyToName: replyToAddr ? (m.replyToName ?? undefined) : undefined,
     attachments: atts.map((a) => ({
       id: a.id,
       filename: a.filename ?? '',
@@ -284,6 +307,78 @@ app.get('/api/attachments/:id', async (c) => {
     .limit(1);
   if (rows.length === 0) return c.json({ error: 'not_found' }, 404);
   return streamDownload(rows[0].storagePath, rows[0].filename ?? `attachment-${id}`);
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/mails/:id/favorite — star / unstar. Starred mail is exempt from the
+// retention auto-purge (see purge.ts), so it survives past RETENTION_DAYS.
+// ---------------------------------------------------------------------------
+app.put('/api/mails/:id/favorite', async (c) => {
+  if (!mutationLimiter(clientKey(c))) return c.json({ error: 'rate_limited' }, 429);
+  const id = c.req.param('id');
+
+  let payload: unknown;
+  try {
+    payload = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid_json' }, 400);
+  }
+  if (
+    typeof payload !== 'object' ||
+    payload === null ||
+    typeof (payload as { favorite?: unknown }).favorite !== 'boolean'
+  ) {
+    return c.json({ error: 'invalid_body' }, 400);
+  }
+  const favorite = (payload as { favorite: boolean }).favorite;
+
+  const updated = await db
+    .update(mails)
+    .set({ isFavorite: favorite })
+    .where(eq(mails.id, id))
+    .returning({ id: mails.id, isFavorite: mails.isFavorite });
+  if (updated.length === 0) return c.json({ error: 'not_found' }, 404);
+
+  const body: FavoriteResponse = { id: updated[0].id, isFavorite: updated[0].isFavorite };
+  return c.json(body);
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/mails/:id — hard delete: remove the row (attachments cascade via
+// the FK) plus the attachment files and the archived raw .eml from the PVC.
+// ---------------------------------------------------------------------------
+app.delete('/api/mails/:id', async (c) => {
+  if (!mutationLimiter(clientKey(c))) return c.json({ error: 'rate_limited' }, 429);
+  const id = c.req.param('id');
+
+  // Gather on-disk paths BEFORE deleting the row (the delete cascades attachments).
+  const rows = await db
+    .select({ rawPath: mails.rawPath })
+    .from(mails)
+    .where(eq(mails.id, id))
+    .limit(1);
+  if (rows.length === 0) return c.json({ error: 'not_found' }, 404);
+
+  const atts = await db
+    .select({ storagePath: attachments.storagePath })
+    .from(attachments)
+    .where(eq(attachments.mailId, id));
+
+  await db.delete(mails).where(eq(mails.id, id));
+
+  // Best-effort file cleanup — a missing file must never fail the delete.
+  for (const p of [rows[0].rawPath, ...atts.map((a) => a.storagePath)]) {
+    if (!p) continue;
+    try {
+      await unlink(p);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.error(`[delete] failed to unlink ${p}`, err);
+      }
+    }
+  }
+
+  return c.body(null, 204);
 });
 
 // ---------------------------------------------------------------------------
