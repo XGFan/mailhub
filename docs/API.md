@@ -53,7 +53,12 @@ Liveness probe (always returns 200).
 ---
 
 ### GET `/readyz`
-Readiness probe: checks Postgres + R2 connectivity.
+Readiness probe. **`ok` reflects Postgres reachability only** — that is what
+determines whether the pod can serve traffic. R2 is also probed (time-boxed to
+800 ms) and reported in `checks.r2` for observability, but it is **non-fatal**:
+R2 is an at-least-once buffer the ingestor tolerates being briefly unavailable,
+so a transient R2/network blip must not eject the pod from the Service. Gating
+readiness on a cross-internet R2 round-trip also caused probe timeouts.
 
 **Response:**
 ```json
@@ -66,7 +71,8 @@ Readiness probe: checks Postgres + R2 connectivity.
 }
 ```
 
-Status code is **200** if all checks pass, **503** otherwise.
+Status code is **200** when `db` is reachable (regardless of `r2`), **503** when
+the DB check fails.
 
 ---
 

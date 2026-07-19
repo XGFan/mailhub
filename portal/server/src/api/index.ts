@@ -154,21 +154,33 @@ function clientKey(c: { req: { header: (n: string) => string | undefined } }): s
 app.get('/healthz', (c) => c.json({ ok: true }));
 
 app.get('/readyz', async (c) => {
-  const checks: Record<string, boolean> = {};
+  // Readiness = "can this pod serve traffic" = DB reachable. R2 is an at-least-once
+  // buffer the ingestor tolerates being briefly unavailable (mail stays in R2, the
+  // poll retries), so a transient R2/network blip must NOT eject the pod from
+  // rotation. It also runs over the public internet, where a slow round-trip would
+  // stall the probe. So R2 status is reported for observability only — time-boxed
+  // and never fatal. See k8s readinessProbe timeoutSeconds for the outer bound.
+  let db_ = false;
   try {
     await db.execute(sql`select 1`);
-    checks.db = true;
+    db_ = true;
   } catch {
-    checks.db = false;
+    db_ = false;
   }
+  let r2: boolean | null = null;
   try {
-    await headBucket();
-    checks.r2 = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      headBucket(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('r2 check timed out')), 800);
+      }),
+    ]).finally(() => clearTimeout(timer));
+    r2 = true;
   } catch {
-    checks.r2 = false;
+    r2 = false;
   }
-  const ok = checks.db && checks.r2;
-  return c.json({ ok, checks }, ok ? 200 : 503);
+  return c.json({ ok: db_, checks: { db: db_, r2 } }, db_ ? 200 : 503);
 });
 
 // ---------------------------------------------------------------------------

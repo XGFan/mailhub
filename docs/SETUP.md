@@ -222,6 +222,9 @@ spec:
             port: http
           initialDelaySeconds: 5
           periodSeconds: 10
+          # kubelet's default probe timeout is 1s; /readyz can touch R2 over the
+          # public internet, so widen it to avoid false NotReady on a slow blip.
+          timeoutSeconds: 5
       volumes:
       - name: attachments
         persistentVolumeClaim:
@@ -354,7 +357,7 @@ This prevents the dead-letter bucket from accumulating indefinitely.
 
 The portal exposes:
 - `/healthz` — liveness (always 200)
-- `/readyz` — readiness (DB + R2 check, 200 or 503)
+- `/readyz` — readiness: 200 when Postgres is reachable, 503 otherwise. R2 is probed too but reported non-fatally in `checks.r2` (see API.md).
 
 For production, integrate these with your monitoring stack:
 - **Metrics:** ingest lag, pending-object count/age, dead-letter count, parse failures
@@ -369,7 +372,7 @@ For production, integrate these with your monitoring stack:
 - Likely causes: bad `DATABASE_URL`, unreachable Postgres, bad R2 credentials
 
 **Mail not appearing in the UI after 30 seconds:**
-- Check `/readyz` — is R2 reachable?
+- Check `/readyz` — is `checks.r2` true? (R2 is reported there but no longer fails readiness.)
 - Check the `dead/` bucket in R2 — is there a parse error?
 - Manually trigger ingest: `POST /api/ingest/run` (via curl or the UI "Fetch now" button)
 
