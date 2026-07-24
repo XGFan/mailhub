@@ -1,5 +1,5 @@
-# MailHub CI —— 与 temp-mail-hub 同款：test → build(push registry) → deploy(kubectl set image) → bark 通知。
-# 需要的 Woodpecker secrets：docker_username / docker_password（registry）、kubeconfig（set image）、bark_token（通知）。
+# MailHub CI —— 与 temp-mail-hub 同款：test → build(push registry) → Flux image automation(infra 侧) → bark 通知。
+# 需要的 Woodpecker secrets：docker_username / docker_password（registry）、bark_token（通知）。
 # 镜像 docker.test4x.com/xgfan/mailhub:{<sha8>,latest}；live 跑具体 SHA（k8s 清单里 :latest 仅模板）。
 when:
   branch: master
