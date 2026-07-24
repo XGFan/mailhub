@@ -4,7 +4,6 @@
 when:
   branch: master
   event: [push, manual]
-
 steps:
   # 注：不在 CI 跑 pnpm install/test —— 集群到 registry.npmjs.org 出网极慢(~1-3 KiB/s，会 fetch failed)。
   # 单元/集成/E2E 测试在本地跑(pnpm -r test + e2e/)，CI 以 build(镜像可编译) 作为门禁。
@@ -15,7 +14,7 @@ steps:
       registry: docker.test4x.com
       mirror: https://docker.test4x.com
       tags:
-        - "${CI_COMMIT_SHA:0:8}"
+        - "${CI_COMMIT_BRANCH}-${CI_COMMIT_SHA:0:8}-${CI_PIPELINE_NUMBER}"
         - latest
       mtu: 1450
       cache_from: docker.test4x.com/xgfan/mailhub:cache
@@ -24,23 +23,6 @@ steps:
         from_secret: docker_username
       password:
         from_secret: docker_password
-
-  - name: deploy
-    # 不用 bitnami/kubectl:latest（Bitnami 2025 下架 Docker Hub 免费镜像，:latest 拉取失败）。
-    # 改用 infra 漂移 CI 的既有做法：alpine + curl kubectl（集群到 dl.k8s.io 出网正常）。
-    image: alpine:3.20
-    commands:
-      - apk add --no-cache curl >/dev/null
-      - curl -sSLf -o /usr/local/bin/kubectl https://dl.k8s.io/release/v1.34.6/bin/linux/amd64/kubectl
-      - chmod +x /usr/local/bin/kubectl
-      - echo "$KUBECONFIG_DATA" > /tmp/kubeconfig
-      - export KUBECONFIG=/tmp/kubeconfig
-      - kubectl set image deployment/mailhub mailhub=docker.test4x.com/xgfan/mailhub:$(echo $CI_COMMIT_SHA | cut -c1-8) -n default
-      - rm -f /tmp/kubeconfig
-    environment:
-      KUBECONFIG_DATA:
-        from_secret: kubeconfig
-
   - name: notify-success
     image: docker.test4x.com/xgfan/plugin-bark
     failure: ignore
@@ -48,7 +30,6 @@ steps:
       token:
         from_secret: bark_token
       status: success
-
   - name: notify-failure
     image: docker.test4x.com/xgfan/plugin-bark
     failure: ignore
