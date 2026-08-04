@@ -72,10 +72,16 @@ The web UI uses Tailwind v4 via `@tailwindcss/vite` plugin (not PostCSS). CSS is
 **Cluster:** k3s (default namespace), domain `mail.test4x.com`
 - **Deployment strategy:** Singleton (Recreate for RWO PVC), auto-restart
 - **Postgres:** In-cluster (least-privilege role `mailhub`, schema `mailhub`)
-- **R2 storage:** Cloudflare (catch-all `@xgfan.com`, free egress)
+- **R2 storage:** Cloudflare (catch-all `@xgfan.com` + `@t4x.fun`, free egress)
 - **External access:** tinyauth at ingress (LAN bypass for internal IPs)
 
-**CI/CD:** Woodpecker (`.woodpecker.yaml`) builds Docker image and rolls via `kubectl set image` to prod.
+**CI/CD:** Woodpecker (`.woodpecker.yaml`), push-mode GitOps — CI never touches the cluster:
+
+1. `build` — image tagged `<sha8>` + `latest`, pushed to the registry.
+2. `flux-bump` — writes that `<sha8>` into the app's manifest in the **infra repo** and pushes. *This step is the deployment*, so its failure must turn the pipeline red.
+3. `trigger-flux` — webhook so Flux reconciles immediately instead of waiting for its 1-minute `GitRepository` poll (`failure: ignore` — a dropped webhook only costs latency).
+
+Live pods run a concrete SHA; the `:latest` in the k8s manifest is template-only. **CI runs no tests** — cluster egress to `registry.npmjs.org` is ~1–3 KiB/s and `pnpm install` times out, so a compiling image is the only gate. Run `pnpm -r test` and the e2e suite locally before pushing.
 
 **Manifests:** Separate infra repo (`k8s/apps/mailhub/`) — includes Deployment, Service (ClusterIP), Secret, PVC, NetworkPolicy, SOPS-encrypted secrets.
 

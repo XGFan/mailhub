@@ -55,6 +55,31 @@ Email Routing is free on Cloudflare; you only pay for Worker invocations, which 
 
 Once configured, mail sent to any address on your domain (`anything@yourdomain.com`) will be routed to your Worker, buffered in R2, and polled by the portal.
 
+### 5. (Optional) Onboard additional domains
+
+The Worker and the portal are domain-agnostic — nothing in `wrangler.toml`, the Worker
+code, or the portal binds to a specific domain. Adding a second domain is pure Cloudflare
+configuration; **no redeploy and no code change is needed**.
+
+For each extra domain, repeat step 4 (enable Email Routing, catch-all → `mailhub-worker`).
+The only prerequisite is that the zone lives in the **same Cloudflare account** as the
+Worker — Email Workers are account-scoped, so a zone in another account cannot select it.
+
+All domains share one R2 bucket and one archive. Use the recipient (`to_addr`, shown in
+the UI and searchable) to tell them apart.
+
+Two caveats:
+
+- **One catch-all per domain.** If the domain's catch-all already targets another Worker
+  or a forwarding address, pointing it at `mailhub-worker` takes that traffic away from
+  the previous target. To let both coexist, leave the catch-all alone and add specific
+  address rules for `mailhub-worker` instead — custom rules are matched before the
+  catch-all.
+- **Apex only.** Cloudflare Email Routing operates on the zone apex; you cannot route a
+  subdomain separately.
+
+The current deployment serves `@xgfan.com` and `@t4x.fun`.
+
 ---
 
 ## Portal backend deployment

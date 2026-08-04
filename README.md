@@ -154,13 +154,13 @@ Includes:
 
 MailHub runs on a **homelab k3s cluster** (`mail.test4x.com`), with external access gated by **tinyauth** (LAN bypass for internal IPs).
 
-**Image & registry:** Docker image `docker.test4x.com/xgfan/mailhub` is built by **Woodpecker CI** from the root `Dockerfile` (multi-stage: React web build → Node/TS runtime with tsx for inline parsing) and deployed to k3s via `kubectl set image`.
+**Image & registry:** Docker image `docker.test4x.com/xgfan/mailhub` is built by **Woodpecker CI** from the root `Dockerfile` (multi-stage: React web build → Node/TS runtime with tsx for inline parsing), tagged with the commit SHA, and deployed by **Flux**: CI writes the new tag into the infra repo and Flux reconciles it onto k3s. CI has no cluster credentials and runs no tests — run `pnpm -r test` and the e2e suite locally before pushing.
 
 **Cluster resources:**
 - **Deployment:** Singleton (Recreate strategy for RWO PVC), runs the portal server + ingestor + API in one process
 - **Database:** Postgres in-cluster, least-privilege role `mailhub` (schema `mailhub`)
 - **Storage:** 
-  - **R2 (Cloudflare):** Buffers raw MIME, catch-all address `@xgfan.com`
+  - **R2 (Cloudflare):** Buffers raw MIME, catch-all addresses `@xgfan.com` and `@t4x.fun`
   - **PVC:** RWO persistent volume (`/data/attachments`) for parsed attachments
 - **Networking:** Service type `ClusterIP` (no public Ingress), NetworkPolicy restricts in-cluster access; reach it via `kubectl port-forward`, VPN, or Tailscale
 
