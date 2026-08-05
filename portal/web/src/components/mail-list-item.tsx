@@ -28,6 +28,8 @@ interface Props {
   onToggleFavorite: (id: string, next: boolean) => void;
   /** Ask the list to confirm+delete this single mail (via the shared dialog). */
   onRequestDelete: (item: MailListItem) => void;
+  /** Called after Block sender removed this mail, so the app can resync. */
+  onBlockDeleted: (id: string) => void;
 }
 
 /**
@@ -48,9 +50,19 @@ export function MailListRow({
   onToggleSelect,
   onToggleFavorite,
   onRequestDelete,
+  onBlockDeleted,
 }: Props) {
   const display = item.fromName?.trim() || item.fromAddr;
   const when = item.date ?? item.receivedAt;
+
+  // Blocking the sender also deletes this message (starred mail excepted).
+  async function handleBlock() {
+    const { deleted } = await blockAndToast('address', item.fromAddr, {
+      id: item.id,
+      isFavorite: item.isFavorite,
+    });
+    if (deleted) onBlockDeleted(item.id);
+  }
 
   return (
     <div
@@ -162,7 +174,7 @@ export function MailListRow({
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={!item.fromAddr}
-              onSelect={() => void blockAndToast('address', item.fromAddr)}
+              onSelect={() => void handleBlock()}
             >
               <Ban className="size-4" /> Block sender
             </DropdownMenuItem>

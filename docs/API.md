@@ -371,7 +371,13 @@ Update portal settings.
 Block rules drop matching inbound mail **at ingest time**: the raw object is
 deleted from R2 without being parsed into the archive (no DB row, no files).
 Rules are **not retroactive** — mail already archived stays until deleted or
-purged. Matching is against the header `From:` address (falling back to the
+purged. The one exception is a UI convenience, not an API behavior: when the web
+UI blocks a sender/domain *from a message* (row menu or reading pane), it follows
+the rule creation with a `DELETE /api/mails/:id` for that single message, so the
+mail you blocked disappears. Starred mail is skipped (it is retention-exempt);
+every other archived message from that sender is left alone.
+
+Matching is against the header `From:` address (falling back to the
 SMTP envelope sender when the header is absent), case-insensitively:
 
 - `address` rule — exact full-address match (`alice@example.com`)

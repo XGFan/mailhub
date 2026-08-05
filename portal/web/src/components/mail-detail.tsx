@@ -10,6 +10,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import type { BlockRuleType } from '@mailhub/shared';
 import { ApiError, api } from '@/lib/api';
 import { blockAndToast } from '@/lib/block-actions';
 import { domainOf } from '@/lib/block-rules';
@@ -82,6 +83,17 @@ export function MailDetailPane({
       setFavoriteOverride(!next); // revert
       toast.error(err instanceof ApiError ? err.message : 'Failed to update star');
     }
+  }
+
+  // Block from the reading pane: the rule is added and this message is deleted
+  // with it (unless starred), so drop the selection once it is gone.
+  async function handleBlock(ruleType: BlockRuleType, value: string) {
+    if (!data) return;
+    const { deleted } = await blockAndToast(ruleType, value, {
+      id: data.id,
+      isFavorite: favoriteOverride ?? data.isFavorite,
+    });
+    if (deleted) onDeleted(data.id);
   }
 
   async function handleDelete() {
@@ -165,11 +177,11 @@ export function MailDetailPane({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={() => void blockAndToast('address', data.fromAddr)}>
+                  <DropdownMenuItem onSelect={() => void handleBlock('address', data.fromAddr)}>
                     <Ban className="size-4" /> Block sender
                   </DropdownMenuItem>
                   {blockDomain && (
-                    <DropdownMenuItem onSelect={() => void blockAndToast('domain', blockDomain)}>
+                    <DropdownMenuItem onSelect={() => void handleBlock('domain', blockDomain)}>
                       <Ban className="size-4" /> Block domain ({blockDomain})
                     </DropdownMenuItem>
                   )}

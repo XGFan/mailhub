@@ -64,6 +64,10 @@ test('address rule from the row menu drops future mail; removing it lets mail th
   await page.getByRole('menuitem', { name: 'Block sender' }).click();
   await expect(page.getByText(`Blocked ${first.fromAddr}`)).toBeVisible();
 
+  // The mail the block was launched from is deleted with it.
+  await expect(row).toHaveCount(0);
+  await expectAbsent(first.token);
+
   // A second mail from the same sender is dropped at ingest: put it directly,
   // then sync on a control mail seeded afterwards.
   const blockedToken = freshToken('blk');
@@ -100,6 +104,10 @@ test('domain rule from the reading pane blocks subdomains but not lookalike doma
   await page.getByRole('menuitem', { name: `Block domain (${domain})` }).click();
   await expect(page.getByText(`Blocked domain ${domain}`)).toBeVisible();
 
+  // The open message is deleted along with the rule, so the pane empties.
+  await expect(rowByToken(page, base.token)).toHaveCount(0);
+  await expectAbsent(base.token);
+
   // A subdomain sender is dropped. The control mail doubles as the lookalike
   // check: `evil<domain>` is NOT a subdomain of <domain> and must arrive.
   const blockedToken = freshToken('bsd');
@@ -109,6 +117,24 @@ test('domain rule from the reading pane blocks subdomains but not lookalike doma
     fromAddr: `carol@evil${domain}`,
   });
   await expectAbsent(blockedToken);
+});
+
+test('blocking from a starred mail keeps that message (retention-exempt)', async ({ page }) => {
+  const seeded = await seedMail({ subjectText: 'Starred block base' });
+  await page.goto('/');
+
+  const row = rowByToken(page, seeded.token);
+  await row.hover();
+  await row.getByRole('button', { name: 'Star', exact: true }).click();
+  await expect(row.getByRole('button', { name: 'Unstar' })).toBeVisible();
+
+  await row.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Block sender' }).click();
+  await expect(page.getByText('starred message was kept')).toBeVisible();
+
+  await expect(row).toBeVisible();
+  const res = await searchMails({ q: seeded.token, field: 'all', includeSpam: 'true' });
+  expect(res.items.filter((m) => m.subject.includes(seeded.token))).toHaveLength(1);
 });
 
 test('settings form adds rules, rejects duplicates, and lists them', async ({ page }) => {

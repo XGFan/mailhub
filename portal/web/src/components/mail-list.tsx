@@ -89,6 +89,8 @@ interface Props {
   onToggleFavorite: (id: string, next: boolean) => void;
   /** Delete one or many mails (already confirmed). Resolves when done. */
   onDeleteMany: (ids: string[]) => Promise<void>;
+  /** A row's Block action deleted that mail — clear selection + resync. */
+  onBlockDeleted: (id: string) => void;
 }
 
 export function MailList(props: Props) {
@@ -129,6 +131,7 @@ export function MailList(props: Props) {
     onPageChange,
     onToggleFavorite,
     onDeleteMany,
+    onBlockDeleted,
   } = props;
 
   const listRef = useRef<HTMLDivElement>(null);
@@ -399,6 +402,7 @@ export function MailList(props: Props) {
                     onToggleSelect={() => onToggleSelect(item.id)}
                     onToggleFavorite={onToggleFavorite}
                     onRequestDelete={(m) => setPendingDelete([m])}
+                    onBlockDeleted={onBlockDeleted}
                   />
                 </div>
               ))}

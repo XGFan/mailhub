@@ -172,12 +172,19 @@ export default function App() {
     refetch();
   }
 
-  // Delete initiated from the reading pane's own confirm dialog.
+  // A single mail vanished server-side — the reading pane's own confirm dialog,
+  // or a Block action that deleted the mail it was launched from.
   function handleDeleted(id: string) {
     if (selectedId === id) {
       setSelectedId(null);
       setMobileView('list');
     }
+    setSelectedIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
     refetch();
   }
 
@@ -257,6 +264,7 @@ export default function App() {
             onPageChange={setPage}
             onToggleFavorite={handleToggleFavorite}
             onDeleteMany={handleDeleteMany}
+            onBlockDeleted={handleDeleted}
           />
         </section>
 
