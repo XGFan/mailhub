@@ -142,7 +142,7 @@ export function MailDetailPane({
         {/* Header */}
         <div className="space-y-3 border-b px-5 py-4">
           <div className="flex items-start justify-between gap-3">
-            <h1 className="text-lg font-semibold leading-snug">
+            <h1 className="min-w-0 flex-1 break-words text-lg font-semibold leading-snug">
               {data.subject || <span className="italic text-muted-foreground">(no subject)</span>}
             </h1>
             <div className="flex shrink-0 items-center gap-1">

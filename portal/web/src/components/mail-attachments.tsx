@@ -24,7 +24,7 @@ export function MailAttachments({ attachments }: { attachments: Attachment[] }) 
         {files.map((a) => {
           const Icon = iconFor(a.mimeType);
           return (
-            <li key={a.id}>
+            <li key={a.id} className="min-w-0 max-w-full">
               <a
                 href={api.attachmentUrl(a.id)}
                 download
@@ -32,7 +32,9 @@ export function MailAttachments({ attachments }: { attachments: Attachment[] }) 
               >
                 <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                 <span className="max-w-[220px] truncate">{a.filename || 'attachment'}</span>
-                <span className="text-xs text-muted-foreground">{formatBytes(a.sizeBytes)}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {formatBytes(a.sizeBytes)}
+                </span>
                 <Download aria-hidden className="size-3.5 text-muted-foreground" />
               </a>
             </li>

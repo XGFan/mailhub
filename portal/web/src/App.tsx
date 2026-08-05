@@ -193,7 +193,10 @@ export default function App() {
   const desktopCollapsed = !isMobile && listCollapsed;
 
   return (
-    <div className="flex h-screen min-h-0 flex-col bg-background text-foreground">
+    // `overflow-hidden` keeps the document itself from ever scrolling sideways:
+    // without it an over-wide pane pushes the (100%-wide) header and toolbars
+    // off-screen too, not just the mail body.
+    <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-background text-foreground">
       <AppHeader
         onFetchNow={handleFetchNow}
         isFetching={isFetching}
@@ -222,7 +225,7 @@ export default function App() {
           aria-label="Message list"
           style={!isMobile && !desktopCollapsed ? { width } : undefined}
           className={cn(
-            'min-h-0 flex-col border-r',
+            'min-h-0 min-w-0 flex-col border-r',
             isMobile ? 'w-full' : 'shrink-0',
             showList && !desktopCollapsed ? 'flex' : 'hidden',
           )}
@@ -291,12 +294,12 @@ export default function App() {
         <section
           aria-label="Reading pane"
           className={cn(
-            'min-h-0 flex-1',
+            'min-h-0 min-w-0 flex-1',
             showDetail ? 'flex' : 'hidden',
             resizing && 'pointer-events-none',
           )}
         >
-          <div className="min-h-0 flex-1">
+          <div className="min-h-0 min-w-0 flex-1">
             <MailDetailPane
               id={selectedId}
               showRemoteImages={settings.showRemoteImages}
