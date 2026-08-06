@@ -117,3 +117,24 @@ test('AC13: single-pane with Back on mobile (<1024px)', async ({ page }) => {
   await page.getByRole('button', { name: 'Back' }).click();
   await expect(list).toBeVisible();
 });
+
+test('mobile: a reload reopens the mail; Back clears the URL again', async ({ page }) => {
+  await page.setViewportSize({ width: 820, height: 900 });
+  await page.goto('/');
+
+  const list = page.locator('section[aria-label="Message list"]');
+  const reading = page.locator('section[aria-label="Reading pane"]');
+
+  await rows(page).first().click();
+  await expect(reading).toBeVisible();
+
+  // The reading pane — not the list — is what comes back after a refresh.
+  await page.reload();
+  await expect(reading).toBeVisible();
+  await expect(page.getByRole('article', { name: 'Message' })).toBeVisible();
+  await expect(list).not.toBeVisible();
+
+  await page.getByRole('button', { name: 'Back' }).click();
+  await expect(list).toBeVisible();
+  await expect(page).not.toHaveURL(/#\/mail\//);
+});

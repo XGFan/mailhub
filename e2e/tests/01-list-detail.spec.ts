@@ -43,3 +43,29 @@ test('AC4: detail shows subject, envelope recipient and sender', async ({ page }
   await expect(article).toContainText(`to ${mail.toAddr}`);
   await expect(article).toContainText(mail.fromAddr);
 });
+
+test('the open mail is encoded in the URL and survives a reload', async ({ page }) => {
+  await page.goto('/');
+  await openMailByToken(page, mail.token);
+  await expect(page).toHaveURL(/#\/mail\/.+$/);
+
+  await page.reload();
+
+  // Same mail reopens, and its row is still the selected one.
+  const article = page.getByRole('article', { name: 'Message' });
+  await expect(article.getByRole('heading', { level: 1 })).toContainText(mail.subjectDecoded);
+  await expect(rowByToken(page, mail.token)).toHaveAttribute('aria-selected', 'true');
+});
+
+test('Back closes the open mail, Forward reopens it', async ({ page }) => {
+  await page.goto('/');
+  await openMailByToken(page, mail.token);
+
+  await page.goBack();
+  await expect(page).not.toHaveURL(/#\/mail\//);
+  await expect(page.getByRole('article', { name: 'Message' })).toBeHidden();
+
+  await page.goForward();
+  await expect(page.getByRole('article', { name: 'Message' })).toBeVisible();
+  await expect(rowByToken(page, mail.token)).toHaveAttribute('aria-selected', 'true');
+});

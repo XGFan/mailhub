@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PanelLeftOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import type { MailSort, SearchField } from '@mailhub/shared';
@@ -6,6 +6,7 @@ import { ApiError, api } from '@/lib/api';
 import { useDebouncedValue } from '@/hooks/use-debounce';
 import { useIsMobile } from '@/hooks/use-media-query';
 import { useMailSearch } from '@/hooks/use-mail-search';
+import { useSelectedMail } from '@/hooks/use-selected-mail';
 import { MAX_LIST_WIDTH, MIN_LIST_WIDTH, useResizableWidth } from '@/hooks/use-resizable-width';
 import { useSettings } from '@/hooks/use-settings';
 import { AppHeader } from '@/components/app-header';
@@ -25,9 +26,9 @@ export default function App() {
   const [favoriteOnly, setFavoriteOnly] = useState(false);
   const [sort, setSort] = useState<MailSort>('date-desc');
   const [page, setPage] = useState(1);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Lives in the URL hash so a reload reopens the same mail.
+  const [selectedId, setSelectedId] = useSelectedMail();
   const [activeIndex, setActiveIndex] = useState(0);
-  const [mobileView, setMobileView] = useState<'list' | 'detail'>('list');
   const [isFetching, setIsFetching] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -77,12 +78,22 @@ export default function App() {
     setSelectedIds(new Set());
   }, [page]);
 
+  // A mail restored from the URL is opened before the list has loaded, so park
+  // the keyboard cursor on its row once it shows up. Only for that first
+  // restore — afterwards the cursor is the user's to move.
+  const cursorRestored = useRef(selectedId === null);
+  useEffect(() => {
+    if (cursorRestored.current || !data) return;
+    cursorRestored.current = true; // first loaded page decides — hit or miss
+    const index = data.items.findIndex((i) => i.id === selectedId);
+    if (index >= 0) setActiveIndex(index);
+  }, [data, selectedId]);
+
   function openIndex(index: number) {
     const item = items[index];
     if (!item) return;
     setActiveIndex(index);
     setSelectedId(item.id);
-    if (isMobile) setMobileView('detail');
   }
 
   async function handleFetchNow() {
@@ -164,10 +175,7 @@ export default function App() {
     const ok = ids.length - failed;
     if (ok > 0) toast.success(`Deleted ${ok} message${ok === 1 ? '' : 's'}`);
     if (failed > 0) toast.error(`Failed to delete ${failed} message${failed === 1 ? '' : 's'}`);
-    if (selectedId && ids.includes(selectedId)) {
-      setSelectedId(null);
-      setMobileView('list');
-    }
+    if (selectedId && ids.includes(selectedId)) setSelectedId(null);
     setSelectedIds(new Set());
     refetch();
   }
@@ -175,10 +183,7 @@ export default function App() {
   // A single mail vanished server-side — the reading pane's own confirm dialog,
   // or a Block action that deleted the mail it was launched from.
   function handleDeleted(id: string) {
-    if (selectedId === id) {
-      setSelectedId(null);
-      setMobileView('list');
-    }
+    if (selectedId === id) setSelectedId(null);
     setSelectedIds((prev) => {
       if (!prev.has(id)) return prev;
       const next = new Set(prev);
@@ -188,8 +193,10 @@ export default function App() {
     refetch();
   }
 
-  const showList = !isMobile || mobileView === 'list';
-  const showDetail = !isMobile || mobileView === 'detail';
+  // On mobile the two panes swap; which one shows follows the open mail, so
+  // browser Back (which clears the hash) lands on the list like the Back button.
+  const showList = !isMobile || selectedId === null;
+  const showDetail = !isMobile || selectedId !== null;
   const desktopCollapsed = !isMobile && listCollapsed;
 
   return (
@@ -304,7 +311,7 @@ export default function App() {
               id={selectedId}
               showRemoteImages={settings.showRemoteImages}
               isMobile={isMobile}
-              onBack={() => setMobileView('list')}
+              onBack={() => setSelectedId(null)}
               onFavoriteChanged={refetch}
               onDeleted={handleDeleted}
             />
