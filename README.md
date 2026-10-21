@@ -120,6 +120,8 @@ pnpm dev
 
 Open http://localhost:5173 in your browser.
 
+The UI is an installable web app (Web App Manifest in `portal/web/public/`): use the browser's **Install** (Chrome/Edge) or **Share → Add to Home Screen** (iOS Safari) to launch it standalone, without browser chrome. There is no service worker — it still needs the network. On iOS the home-screen app has its own cookie/storage jar, separate from Safari: sign in to the ingress again inside it, and re-enter the API key in Settings if `API_KEYS` is set.
+
 ## Documentation
 
 - **[`docs/API.md`](docs/API.md)** — REST API endpoint reference with request/response examples

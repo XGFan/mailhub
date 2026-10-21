@@ -9,6 +9,7 @@ import { useMailSearch } from '@/hooks/use-mail-search';
 import { useSelectedMail } from '@/hooks/use-selected-mail';
 import { MAX_LIST_WIDTH, MIN_LIST_WIDTH, useResizableWidth } from '@/hooks/use-resizable-width';
 import { useSettings } from '@/hooks/use-settings';
+import { useThemeColor } from '@/hooks/use-theme-color';
 import { AppHeader } from '@/components/app-header';
 import { MailDetailPane } from '@/components/mail-detail';
 import { MailList } from '@/components/mail-list';
@@ -37,6 +38,7 @@ export default function App() {
   );
 
   const isMobile = useIsMobile();
+  useThemeColor();
   const debouncedQuery = useDebouncedValue(rawQuery.trim(), 300);
   const { settings, setShowRemoteImages } = useSettings();
   const { width, resizing, startResize, onSeparatorKeyDown } = useResizableWidth(
